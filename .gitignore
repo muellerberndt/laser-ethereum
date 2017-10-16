@@ -1,0 +1,9 @@
+.DS_Store
+.python-version
+__pycache__
+*.pyc
+build
+dist
+*.rst
+*.lock
+*.svg
