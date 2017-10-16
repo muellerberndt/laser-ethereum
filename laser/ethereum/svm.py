@@ -30,9 +30,7 @@ class State():
         self.vars['callvalue'] = BitVec("callvalue", 256)
         self.vars['caller'] = BitVec("caller", 256)
         self.vars['origin'] = BitVec("origin", 256)
-        self.vars['address_to'] = BitVec("address_to", 256)
-
-        self.send_eth = []
+        self.vars['address_to'] = BitVec("address_to", 256) 
 
         self.calldata = {}
         self.memory = {}
