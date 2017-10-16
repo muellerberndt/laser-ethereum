@@ -1,5 +1,4 @@
 from z3 import *
-import re
 import logging
 
 def execute(svm):
@@ -19,20 +18,19 @@ def execute(svm):
                 if (edge.condition is not None):
 
                     s.add(edge.condition)
+                    try:
+                        print(simplify(edge.condition))
+                    except:
+                        print(edge.condition)
 
-            s.add(svm.env['caller'] == 0x1234)
-
-            print(s)
+            s.add(svm.env['caller'] == 0x1234567890)
 
             if (s.check() == sat):
 
                 m = s.model()
 
-                solution = str(m)
-                # solution = re.sub("(\d+)",  lambda m: hex(int(m.group(1))), solution)
-                # solution = re.sub("[0-9a-f]{32}[\],\)]*", "(...)", solution)
-
-                logging.info(solution)
+                for d in m.decls():
+                    print("%s = %s" % (d.name(), hex(m[d].as_long())))
 
             else:
 

@@ -8,9 +8,8 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 5
+MAX_DEPTH = 16
 
-logging.basicConfig(level=logging.INFO)
 
 class SVMError(Exception):
     pass
@@ -24,13 +23,6 @@ class JumpType(Enum):
 class State(): 
 
     def __init__(self):
-
-        self.vars = {}
-
-        self.vars['callvalue'] = BitVec("callvalue", 256)
-        self.vars['caller'] = BitVec("caller", 256)
-        self.vars['origin'] = BitVec("origin", 256)
-        self.vars['address_to'] = BitVec("address_to", 256) 
 
         self.calldata = {}
         self.memory = {}
@@ -59,6 +51,7 @@ class Edge:
         self.type = edge_type
         self.condition = condition
 
+
 class SVM:
 
     def __init__(self, disassembly, max_depth=MAX_DEPTH, branch_at_jumpi = False):
@@ -71,6 +64,13 @@ class SVM:
         self.trace = ""
         self.max_depth = max_depth
         self.branch_at_jumpi = branch_at_jumpi
+
+        self.env = {}
+
+        self.env['callvalue'] = BitVec("callvalue", 256)
+        self.env['caller'] = BitVec("caller", 256)
+        self.env['origin'] = BitVec("origin", 256)
+        self.env['address_to'] = BitVec("address_to", 256) 
 
 
     def walk_to_node(self, this_node, node_to, path, paths, depth):
@@ -160,7 +160,11 @@ class SVM:
             # Bitwise ops
 
             elif op == 'AND':
-                state.stack.append(state.stack.pop() & state.stack.pop())
+                op1 = state.stack.pop() 
+                op2 = state.stack.pop()
+
+                # logging.info("AND: " + str(op1) + " = " + str(type(op1)) + ", " + str(op2) + " = " + str(type(op2)))
+                state.stack.append(op1 & op2)
 
             elif op == 'OR':
                 op1 = state.stack.pop()
@@ -226,10 +230,9 @@ class SVM:
                 state.stack.append((s0 * s1) % s2 if s2 else 0)
 
             elif op == 'EXP':
-                # Not implemented. The only EXP operations I have seen used are pow(op1, 0), so return 1
                 base, exponent = state.stack.pop(), state.stack.pop()
 
-                state.stack.append(BitVecVal(1,256))
+                state.stack.append(base ^ exponent)
 
             elif op == 'SIGNEXTEND':
                 s0, s1 = state.stack.pop(), state.stack.pop()
@@ -274,7 +277,7 @@ class SVM:
                 val = state.stack.pop()
 
                 if (type(val) == BoolRef):
-                   exp = val == True
+                   exp = val == False
                 else:   
                    exp = val == 0
 
@@ -283,7 +286,7 @@ class SVM:
              # Call data
 
             elif op == 'CALLVALUE':
-                state.stack.append(state.vars['callvalue'])
+                state.stack.append(self.env['callvalue'])
 
             elif op == 'CALLDATALOAD':
                 offset = state.stack.pop()
@@ -303,17 +306,17 @@ class SVM:
             # Environment
 
             elif op == 'ADDRESS':
-                state.stack.append(state.vars['address_to'])
+                state.stack.append(self.env['address_to'])
 
             elif op == 'BALANCE':
                 addr = state.stack.pop()
                 state.stack.append(BitVec("balance_at_" + str(addr), 256))
 
             elif op == 'ORIGIN':
-                state.stack.append(state.vars['origin'])
+                state.stack.append(self.env['origin'])
 
             elif op == 'CALLER':
-                state.stack.append(state.vars['caller'])
+                state.stack.append(self.env['caller'])
 
             elif op == 'CODESIZE':
                 state.stack.append(len(self.disassembly.instruction_list))
