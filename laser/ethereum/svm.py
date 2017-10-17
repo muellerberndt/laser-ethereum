@@ -8,7 +8,7 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 16
+MAX_DEPTH = 8
 
 
 class SVMError(Exception):
@@ -60,7 +60,7 @@ class SVM:
         self.edges = []
         self.paths = {}
         self.send_eth_nodes = []
-        self.storage_writes = {}
+        self.sstor_node_lists = {}
         self.storage = {}
         self.trace = ""
         self.max_depth = max_depth
@@ -102,7 +102,7 @@ class SVM:
 
     def sym_exec(self):
 
-        logging.info("Starting SVM execution")
+        logging.debug("Starting SVM execution")
 
         self.nodes[0] = self._sym_exec(State(), 0)
 
@@ -405,16 +405,16 @@ class SVM:
                 offset, value = state.stack.pop(), state.stack.pop()
 
                 if type(offset) == BitVecRef:
-                    logging.info("Not supported: SSTORE to hash offset")
+                    logging.debug("Not supported: SSTORE to hash offset")
                 else:
                     i = offset.as_long()
 
                     logging.debug("Write to storage[" + str(offset) + "] at node " + str(start_addr))
 
                     try:
-                        self.storage_writes[i].append(start_addr)
+                        self.sstor_node_lists[i].append(start_addr)
                     except KeyError:
-                        self.storage_writes[i] = [start_addr]
+                        self.sstor_node_lists[i] = [start_addr]
 
                     try:
                         self.storage[i]
@@ -426,7 +426,7 @@ class SVM:
                 jump_addr = state.stack.pop()
 
                 if (type(jump_addr) == BitVecRef):
-                    logging.info("Invalid jump argument: JUMP <bitvector> at " + str(self.disassembly.instruction_list[state.pc]['address']))
+                    logging.debug("Invalid jump argument: JUMP <bitvector> at " + str(self.disassembly.instruction_list[state.pc]['address']))
 
                     return node
 
@@ -536,7 +536,7 @@ class SVM:
                     send_eth = True
 
                 if (send_eth):
-                    logging.info("CALL with non-zero value: " + str(value))
+                    logging.debug("CALL with non-zero value: " + str(value))
                     self.send_eth_nodes.append(start_addr)
              
                 state.stack.append(BitVecVal(0, 256))

@@ -2,17 +2,36 @@ from z3 import *
 import logging
 import re
 
+
+def solve_path(svm, path, caller = None, owner = None, owner_storage_index = 1):
+
+    s = Solver() 
+
+    if(caller is not None):
+        s.add(svm.env['caller'] == caller)
+    if(owner is not None):
+        s.add(svm.storage[owner_storage_index] == owner)
+
+    for edge in path:
+        s.add(condition)
+
+    if (s.check() == sat):
+
+        return s.model()
+
+    else:
+        return None
+        
+
 def execute(svm):
 
     for node_addr in svm.send_eth_nodes:
 
-        logging.debug("Checking node at " + str(node_addr) )
+        logging.debug("Checking node at " + str(node_addr))
 
-        for paths in svm.paths[node_addr]:
+        for path in svm.paths[node_addr]:
 
-            s = Solver()
-
-            for edge in paths:
+            for edge in path:
 
                 if (edge.condition is not None):
 
@@ -22,53 +41,41 @@ def execute(svm):
                         m = re.search(r'storage_(\d+)', cond)
 
                         if (m):
-                            i = int(m.group(1))
+                            owner_index = int(m.group(1))
 
-                            logging.debug("Constraint on msg.sender: caller == storage_" + str(i))
-
-                            logging.debug("Checking for writes to storage_" + (str(i)))
+                            logging.debug("Constraint on msg.sender: caller == storage_" + str(owner_index))
+                            logging.debug("Checking for writes to storage_" + (str(owner_index)))
 
                             try:
-                                writes = svm.storage_writes[i]
 
-                                for w in writes:
+                                for _node_addr in svm.sstor_node_lists[owner_index]:
 
-                                    logging.debug("Checking node " + str(w))
+                                    logging.debug("Checking node " + str(_node_addr))
 
-                                    ps = svm.paths[w]
+                                    for _path in svm.paths[_node_addr]:
 
-                                    for p in ps:
+                                        # Try to solve for caller != owner
 
-                                        s = Solver()
+                                        m = solve_path(svm, _path, caller=0x1234, owner=0x2345, owner_index=owner_index)
 
-                                        for e in p:
-
-                                            s.add(edge.condition)
-
-                                        s.add(svm.env['caller'] == 0x111111)
-                                        s.add(svm.storage[i] == 0x222222)
-
-                                        # print(str(svm.storage))
-                                        # print(str(i))
-                                        
-                                        if (s.check() == sat):
-
-                                            m = s.model()
-
-                                            print("Owner overwrite detected!")
-
+                                        if m is not None:
+                                            print("Owner overwrite at node " + str(_node_addr))
                                             for d in m.decls():
                                                 print("%s = %s" % (d.name(), hex(m[d].as_long())))
-
                                         else:
-                                            logging.info("unsat")
+                                            print("Unable to satisfy constraints")       
 
                             except KeyError:
-                                logging.info("No writes found")
+                                logging.debug("No writes found")
 
+                        else:
+                            logging.debug("Potential unchecked transfer, verifying...")
 
-
-
-                    s.add(edge.condition)
-
-
+                            m = solve_path(svm, path, caller=0x1234, owner=0x2345, owner_index=owner_index)
+                            
+                            if m is not None:
+                                print("Unchecked transfer at " + str(_node_addr))
+                                for d in m.decls():
+                                    print("%s = %s" % (d.name(), hex(m[d].as_long())))
+                            else:
+                                print("Unable to satisfy constraints")                   
