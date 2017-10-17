@@ -7,3 +7,4 @@ dist
 *.rst
 *.lock
 *.svg
+laser_ethereum.egg-info
