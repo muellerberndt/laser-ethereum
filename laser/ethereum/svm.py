@@ -8,7 +8,7 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 8
+MAX_DEPTH = 24
 
 
 class SVMError(Exception):
@@ -74,28 +74,31 @@ class SVM:
         self.env['address_to'] = BitVec("address_to", 256) 
 
 
-    def walk_to_node(self, this_node, node_to, path, paths, depth):
+    def walk_to_node(self, this_node, node_to, path, paths, depth, nodes_visited):
 
-        if (depth > MAX_DEPTH):
+        if (depth > MAX_DEPTH) or (this_node in nodes_visited):
             return
 
         if this_node == node_to:
             paths.append(path)
             return
 
+        nodes_visited.append(this_node)
+
         for edge in self.edges:
 
             if edge.node_from == this_node:
                 new_path = copy.deepcopy(path)
                 new_path.append(edge)
-                self.walk_to_node(edge.node_to, node_to, new_path, paths, depth + 1)
+                self.walk_to_node(edge.node_to, node_to, new_path, paths, depth + 1, nodes_visited)
 
 
     def find_paths(self, node_to):
 
         paths = []
+        nodes_visited = []
 
-        self.walk_to_node(0, node_to, [], paths, 0)
+        self.walk_to_node(0, node_to, [], paths, 0, nodes_visited)
 
         return paths
 
@@ -114,7 +117,7 @@ class SVM:
 
             paths = self.find_paths(key)
 
-            logging.debug("Found " + str(len(paths)) + " path to node " + str(key))
+            logging.debug("Found " + str(len(paths)) + " paths to node " + str(key))
 
             self.paths[key] = paths
 
