@@ -205,7 +205,7 @@ class SVM:
 
             elif op == 'DIV':
                 s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
-                state.stack.append(0 if s1 == 0 else s0 / s1)
+                state.stack.append(UDiv(s0, s1))
 
             elif op == 'MOD':
                 s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
@@ -230,9 +230,14 @@ class SVM:
                 state.stack.append((s0 * s1) % s2 if s2 else 0)
 
             elif op == 'EXP':
+                # we only implement 2 ** x
                 base, exponent = state.stack.pop(), state.stack.pop()
 
-                state.stack.append(base ^ exponent)
+                if (base.as_long() == 2):
+                    state.stack.append(base << exponent)
+
+                else:
+                    state.stack_append(base)
 
             elif op == 'SIGNEXTEND':
                 s0, s1 = state.stack.pop(), state.stack.pop()
