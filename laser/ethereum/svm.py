@@ -234,7 +234,10 @@ class SVM:
                 base, exponent = state.stack.pop(), state.stack.pop()
 
                 if (base.as_long() == 2):
-                    state.stack.append(base << exponent)
+                    if exponent == 0:
+                        state.stack.append(BitVecVal(1, 256))
+                    else:
+                        state.stack.append(base << (exponent - 1))
 
                 else:
                     state.stack_append(base)

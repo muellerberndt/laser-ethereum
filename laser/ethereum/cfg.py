@@ -64,13 +64,16 @@ def generate_callgraph(svm, file):
 
         if (edge.condition is None):
             expression = ""
+            simplified = ""
         else:
 
             try:
-                expression = str(simplify(edge.condition))
+                simplified = str(simplify(edge.condition))
             except Z3Exception:
-                expression = str(edge.condition)
+                simplified = str(edge.condition)
+            
 
+            expression = str(edge.condition)     
             expression = re.sub("([\d]{2}\d+)",  lambda m: hex(int(m.group(1))), expression)
             expression = re.sub("[0]{8}[0]+", "0000(...)", expression)
             expression = re.sub("[f]{8}[f]+", "ffff(...)", expression)
@@ -95,7 +98,7 @@ def generate_callgraph(svm, file):
                 solution = "unsat"
             '''
 
-        graph.edge(str(edge.node_from),str(edge.node_to), expression)
+        graph.edge(str(edge.node_from),str(edge.node_to), expression + " \n " + simplified)
 
     graph = apply_styles(graph, styles)
 
