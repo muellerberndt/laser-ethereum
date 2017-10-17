@@ -1,4 +1,4 @@
-from . import svm,utils
+from . import svm
 from .modules import unchecked_send
 import logging
 
