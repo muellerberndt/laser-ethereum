@@ -57,13 +57,11 @@ def generate_callgraph(svm, file):
 
             node_text += "\l"
 
-
         graph.node(str(key), node_text)
 
     for edge in svm.edges:
 
         if (edge.condition is None):
-            expression = ""
             simplified = ""
         else:
 
@@ -72,33 +70,11 @@ def generate_callgraph(svm, file):
             except Z3Exception:
                 simplified = str(edge.condition)
             
+            simplified = re.sub("([\d]{2}\d+)",  lambda m: hex(int(m.group(1))), simplified)
+            simplified = re.sub("[0]{8}[0]+", "0000(...)", simplified)
+            simplified = re.sub("[f]{8}[f]+", "ffff(...)", simplified)
 
-            expression = str(edge.condition)     
-            expression = re.sub("([\d]{2}\d+)",  lambda m: hex(int(m.group(1))), expression)
-            expression = re.sub("[0]{8}[0]+", "0000(...)", expression)
-            expression = re.sub("[f]{8}[f]+", "ffff(...)", expression)
-
-            '''
-            s = Solver()
-            s.add(edge.condition)
-
-            if ("BoolRef" in str(type(edge.condition))):
-                s.add(edge.condition)
-            else:
-                s.add(edge.condition == 1)
-
-            if (s.check() == sat):
-
-                m = s.model()
-
-                solution = str(m)
-                solution = re.sub("(\d+)",  lambda m: hex(int(m.group(1))), solution)
-                solution = re.sub("[0-9a-f]{32}[\],\)]*", "(...)", solution)
-            else:
-                solution = "unsat"
-            '''
-
-        graph.edge(str(edge.node_from),str(edge.node_to), expression + " \n " + simplified)
+        graph.edge(str(edge.node_from),str(edge.node_to), simplified)
 
     graph = apply_styles(graph, styles)
 

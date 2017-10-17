@@ -26,7 +26,6 @@ class State():
 
         self.calldata = {}
         self.memory = {}
-        self.storage = {}
         self.stack = []
         self.pc = 0
 
@@ -61,6 +60,8 @@ class SVM:
         self.edges = []
         self.paths = {}
         self.send_eth_nodes = []
+        self.storage_writes = {}
+        self.storage = {}
         self.trace = ""
         self.max_depth = max_depth
         self.branch_at_jumpi = branch_at_jumpi
@@ -240,7 +241,7 @@ class SVM:
                         state.stack.append(base << (exponent - 1))
 
                 else:
-                    state.stack_append(base)
+                    state.stack.append(base)
 
             elif op == 'SIGNEXTEND':
                 s0, s1 = state.stack.pop(), state.stack.pop()
@@ -393,17 +394,32 @@ class SVM:
                 logging.debug("Storage access at offset " + str(offset))
 
                 try:
-                    data = state.storage[offset]
+                    data = self.storage[offset]
                 except KeyError:
-                    state.storage[offset] = BitVec("storage_" + str(offset), 256)
-                    data = state.storage[offset]
+                    data = BitVec("storage_" + str(offset), 256)
+                    self.storage[offset] = data
 
                 state.stack.append(data)
 
             elif op == 'SSTORE':
                 offset, value = state.stack.pop(), state.stack.pop()
 
-                state.storage[offset] = value
+                if type(offset) == BitVecRef:
+                    logging.info("Not supported: SSTORE to hash offset")
+                else:
+                    i = offset.as_long()
+
+                    logging.debug("Write to storage[" + str(offset) + "] at node " + str(start_addr))
+
+                    try:
+                        self.storage_writes[i].append(start_addr)
+                    except KeyError:
+                        self.storage_writes[i] = [start_addr]
+
+                    try:
+                        self.storage[i]
+                    except KeyError:
+                        self.storage[i] = BitVec("storage_" + str(offset), 256)
 
             elif op == 'JUMP':
 
@@ -511,7 +527,6 @@ class SVM:
             elif op == 'CALL':
                 gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
                 state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
-                # Not supported
 
                 send_eth = False
 
