@@ -8,7 +8,7 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 24
+MAX_DEPTH = 16
 
 
 class SVMError(Exception):
@@ -40,6 +40,22 @@ class Node:
         self.start_addr = start_addr
         self.instruction_list = []
 
+    def __str__(self):
+        return str(self.as_dict())
+        
+    def as_dict(self):
+
+        code = ""
+
+        for instruction in self.instruction_list:
+            code += str(instruction['address']) + " " + instruction['opcode']
+            if instruction['opcode'].startswith("PUSH"):
+                code += " " + instruction['argument']
+
+            code += "\\n"
+
+        return {'id': self.start_addr, 'code': code}
+
 
 class Edge:
     
@@ -50,6 +66,12 @@ class Edge:
         self.type = edge_type
         self.condition = condition
 
+    def __str__(self):
+        return str(self.as_dict())
+        
+    def as_dict(self):
+
+        return {'from': self.node_from, 'to': self.node_to}
 
 class SVM:
 
@@ -76,14 +98,14 @@ class SVM:
 
     def walk_to_node(self, this_node, node_to, path, paths, depth, nodes_visited):
 
-        if (depth > MAX_DEPTH) or (this_node in nodes_visited):
+        if (depth > MAX_DEPTH):
             return
 
         if this_node == node_to:
             paths.append(path)
             return
 
-        nodes_visited.append(this_node)
+        # nodes_visited.append(this_node)
 
         for edge in self.edges:
 
@@ -91,6 +113,8 @@ class SVM:
                 new_path = copy.deepcopy(path)
                 new_path.append(edge)
                 self.walk_to_node(edge.node_to, node_to, new_path, paths, depth + 1, nodes_visited)
+
+        # nodes_visited.pop()
 
 
     def find_paths(self, node_to):
@@ -101,7 +125,6 @@ class SVM:
         self.walk_to_node(0, node_to, [], paths, 0, nodes_visited)
 
         return paths
-
 
     def sym_exec(self):
 
