@@ -96,7 +96,7 @@ class SVM:
         self.env['address_to'] = BitVec("address_to", 256) 
 
 
-    def walk_to_node(self, this_node, node_to, path, paths, depth, nodes_visited):
+    def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
 
         if (depth > MAX_DEPTH):
             return
@@ -105,14 +105,20 @@ class SVM:
             paths.append(path)
             return
 
-        # nodes_visited.append(this_node)
+        nodes_visited.append(this_node)
+
+        edges_out = []
 
         for edge in self.edges:
 
-            if edge.node_from == this_node:
-                new_path = copy.deepcopy(path)
-                new_path.append(edge)
-                self.walk_to_node(edge.node_to, node_to, new_path, paths, depth + 1, nodes_visited)
+            if edge.node_from == this_node and edge.node_to not in nodes_visited:
+                edges_out.append(edge)
+
+        for edge in edges_out:
+
+            new_path = copy.deepcopy(path)
+            new_path.append(edge)
+            self.depth_first_search(edge.node_to, node_to, new_path, paths, depth + 1, nodes_visited)
 
         # nodes_visited.pop()
 
@@ -122,7 +128,7 @@ class SVM:
         paths = []
         nodes_visited = []
 
-        self.walk_to_node(0, node_to, [], paths, 0, nodes_visited)
+        self.depth_first_search(0, node_to, [], paths, 0, nodes_visited)
 
         return paths
 
