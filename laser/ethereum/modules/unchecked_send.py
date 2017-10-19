@@ -1,6 +1,7 @@
 from z3 import *
 import logging
 import re
+from laser.ethereum import utils
 
 
 def solve_path(svm, path, caller = None, owner = None, owner_storage_index = None):
@@ -25,7 +26,10 @@ def solve_path(svm, path, caller = None, owner = None, owner_storage_index = Non
 
 def execute(svm):
 
-    for node_addr in svm.send_eth_nodes:
+    for loc in svm.send_eth_locs:
+
+        node_addr = loc['address']
+        function_name = loc['function_name']
 
         logging.info("Checking node at " + str(node_addr))
 
@@ -59,16 +63,16 @@ def execute(svm):
 
                                         # Try to solve for caller != owner
 
-                                        m = solve_path(svm, _path, caller=0x1234, owner=0x2345, owner_storage_index=owner_index)
+                                        m = utils.solve_path(svm, _path, caller=0x1234, owner=0x2345, owner_storage_index=owner_index)
 
                                         if m is not None:
-                                            print("### Owner overwrite at node " + str(_node_addr) + " ###")
+                                            print("Possible owner overwrite at node " + str(_node_addr) + ", function " + function_name)
                                             print("Input data:")
                                             for d in m.decls():
                                                 print("%s = %s" % (d.name(), hex(m[d].as_long())))
                                             print("Ether sent at node: " + str(node_addr))
 
-                                            m = solve_path(svm, svm.paths[node_addr][0])
+                                            m = utils.solve_path(svm, svm.paths[node_addr][0])
 
                                             print("Send Ether input data:")
 
@@ -90,7 +94,7 @@ def execute(svm):
                 m = solve_path(svm, path)
                 
                 if m is not None:
-                    print("### Unchecked transfer detected! ###")
+                    print("Possible unchecked Ether transfer at node " + str(node_addr) + ", function " + function_name)
                     for d in m.decls():
                         print("%s = %s" % (d.name(), hex(m[d].as_long())))
                 else:

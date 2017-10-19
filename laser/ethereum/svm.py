@@ -81,9 +81,11 @@ class SVM:
         self.addr_visited = []
         self.edges = []
         self.paths = {}
-        self.send_eth_nodes = []
+        self.send_eth_locs = []
+        self.reentrancy_funcs = []
         self.sstor_node_lists = {}
         self.storage = {}
+        self.function_state = {}
         self.trace = ""
         self.max_depth = max_depth
         self.branch_at_jumpi = branch_at_jumpi
@@ -119,8 +121,6 @@ class SVM:
             new_path = copy.deepcopy(path)
             new_path.append(edge)
             self.depth_first_search(edge.node_to, node_to, new_path, paths, depth + 1, nodes_visited)
-
-        # nodes_visited.pop()
 
 
     def find_paths(self, node_to):
@@ -159,19 +159,28 @@ class SVM:
 
         logging.debug("- Entering new block, index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
+        if start_addr == 0:
+            self.function_state['current_func'] = "prologue"
+            self.function_state['current_func_addr'] = start_addr
+            self.function_state['sstore_called'] = False            
+
+        if start_addr in self.disassembly.addr_to_func:
+            # Start of a function
+
+            function_name = self.disassembly.addr_to_func[start_addr]
+
+            self.function_state['current_func'] = function_name
+            self.function_state['sstore_called'] = False
+
+            logging.info("- Entering function " + function_name)
+
+            node.instruction_list.append({'opcode': function_name, 'address': self.disassembly.instruction_list[state.pc]['address']})
+
+            state.pc += 1
+
         halt = False
 
         instr = self.disassembly.instruction_list[state.pc]
-
-        if start_addr > 0:
-            try:
-                jumpdest_name = self.disassembly.addr_to_func[self.disassembly.instruction_list[state.pc]['address']]
-            except KeyError:
-                jumpdest_name = "JUMPDEST"
-
-            node.instruction_list.append({'opcode': jumpdest_name, 'address': self.disassembly.instruction_list[state.pc]['address']})
-
-            state.pc += 1
 
         while not halt:
 
@@ -448,6 +457,8 @@ class SVM:
             elif op == 'SSTORE':
                 offset, value = state.stack.pop(), state.stack.pop()
 
+                self.function_state['sstore_called'] = True
+
                 if type(offset) == BitVecRef:
                     logging.debug("Not supported: SSTORE to hash offset")
                 else:
@@ -581,8 +592,12 @@ class SVM:
 
                 if (send_eth):
                     logging.debug("CALL with non-zero value: " + str(value))
-                    self.send_eth_nodes.append(start_addr)
-             
+                    self.send_eth_locs.append({'address': start_addr, 'function_name': self.function_state['current_func']})
+
+                    if not self.function_state['sstore_called']:
+                        logging.info("Possible reentrancy at " + self.function_state['current_func'])
+                        self.reentrancy_funcs.append(self.function_state['current_func_addr'])
+
                 state.stack.append(BitVecVal(0, 256))
 
             elif op == 'CALLCODE':

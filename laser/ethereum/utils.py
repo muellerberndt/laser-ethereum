@@ -44,3 +44,22 @@ def pop_bitvec(state):
         return If(item, BitVecVal(1, 256), BitVecVal(0, 256))
     else:
         return item
+
+def solve_path(svm, path, caller = None, owner = None, owner_storage_index = None):
+
+    s = Solver() 
+
+    if(caller is not None):
+        s.add(svm.env['caller'] == caller)
+    if(owner is not None):
+        s.add(svm.storage[owner_storage_index] == owner)
+
+    for edge in path:
+        if edge.condition is not None:
+            s.add(edge.condition)
+
+    if (s.check() == sat):
+        return s.model()
+
+    else:
+        return None
