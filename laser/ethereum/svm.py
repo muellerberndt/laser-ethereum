@@ -132,6 +132,7 @@ class SVM:
 
         return paths
 
+
     def sym_exec(self):
 
         logging.debug("Starting SVM execution")
@@ -159,6 +160,18 @@ class SVM:
         logging.debug("- Entering new block, index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
         halt = False
+
+        instr = self.disassembly.instruction_list[state.pc]
+
+        if start_addr > 0:
+            try:
+                jumpdest_name = self.disassembly.addr_to_func[self.disassembly.instruction_list[state.pc]['address']]
+            except KeyError:
+                jumpdest_name = "JUMPDEST"
+
+            node.instruction_list.append({'opcode': jumpdest_name, 'address': self.disassembly.instruction_list[state.pc]['address']})
+
+            state.pc += 1
 
         while not halt:
 
@@ -196,7 +209,6 @@ class SVM:
                 op1 = state.stack.pop() 
                 op2 = state.stack.pop()
 
-                # logging.info("AND: " + str(op1) + " = " + str(type(op1)) + ", " + str(op2) + " = " + str(type(op2)))
                 state.stack.append(op1 & op2)
 
             elif op == 'OR':
