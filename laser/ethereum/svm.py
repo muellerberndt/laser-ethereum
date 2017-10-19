@@ -3,6 +3,8 @@ from laser.ethereum import utils
 from z3 import *
 import copy
 import logging
+from random import randint
+
 
 TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
@@ -598,7 +600,9 @@ class SVM:
                         logging.info("Possible reentrancy at " + self.function_state['current_func'])
                         self.reentrancy_funcs.append(self.function_state['current_func_addr'])
 
-                state.stack.append(BitVecVal(0, 256))
+                ret = BitVec("retval_" + str(self.disassembly.instruction_list[state.pc]['address']) + "_" + str(randint(0, 1000)), 256)
+
+                state.stack.append(ret)
 
             elif op == 'CALLCODE':
                 gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
