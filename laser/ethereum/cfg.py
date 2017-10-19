@@ -70,7 +70,7 @@ def generate_callgraph(svm, file):
             except Z3Exception:
                 simplified = str(edge.condition)
             
-            simplified = re.sub("([\d]{2}\d+)",  lambda m: hex(int(m.group(1))), simplified)
+            simplified = re.sub("([\d+)",  lambda m: hex(int(m.group(1))), simplified)
             simplified = re.sub("[0]{8}[0]+", "0000(...)", simplified)
             simplified = re.sub("[f]{8}[f]+", "ffff(...)", simplified)
 
