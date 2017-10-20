@@ -324,17 +324,27 @@ class SVM:
 
             elif op == 'SLT':
 
-                exp = SLT(utils.pop_bitvec(state) < utils.pop_bitvec(state))
+                exp = utils.pop_bitvec(state) < utils.pop_bitvec(state)
                 state.stack.append(exp)
 
             elif op == 'SGT':
 
-                exp = SGT(utils.pop_bitvec(state) > utils.pop_bitvec(state))
+                exp = utils.pop_bitvec(state) > utils.pop_bitvec(state)
                 state.stack.append(exp)
 
             elif op == 'EQ':
 
-                exp = state.stack.pop() == state.stack.pop()
+                op1 = state.stack.pop()
+                op2 = state.stack.pop()
+
+                if(type(op1) == BoolRef):
+                    op1 = If(op1, BitVecVal(1,256), BitVecVal(0,256))
+
+                if(type(op2) == BoolRef):
+                    op2 = If(op2, BitVecVal(1,256), BitVecVal(0,256))
+
+                exp = op1 == op2
+
                 state.stack.append(exp)
 
             elif op == 'ISZERO':

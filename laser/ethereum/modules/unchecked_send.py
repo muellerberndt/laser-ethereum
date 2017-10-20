@@ -12,21 +12,16 @@ def execute(svm):
 
         models = utils.satisfy(svm, node_addr)
 
-        print("MODELS")
-        print(models)
-        print("-----")
-
         i = 1
 
         if len(models):
 
-            print("Possible Ether send at " + str(node_addr) + ", function " + function_name)
+            print("Possible transaction sequence for Ether withdrawal: Npde " + str(node_addr) + ", function " + function_name)
 
             for model in models:
                 print("--- model " + str(i) + " ---")
                 for k in model:
                     print(str(k), hex(model[k].as_long()))
                 i  += 1
-        else:
-            logging.info("Investigating Ether send at node " + str(node_addr) + ", function " + function_name)
+
                 
