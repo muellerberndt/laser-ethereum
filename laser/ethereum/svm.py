@@ -4,6 +4,7 @@ from z3 import *
 import copy
 import logging
 from random import randint
+import sha3
 
 
 TT256 = 2 ** 256
@@ -387,7 +388,12 @@ class SVM:
 
             if op == 'SHA3':
                 s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
-                state.stack.append(BitVec("sha_hash", 256))
+
+                mem = state.memory[s0]
+
+                # Don't actually calculate the hash
+
+                state.stack.append(BitVec("SHA3(" + str(simplify(mem)) + ")", 256))
 
             elif op == 'GASPRICE':
                 state.stack.append(0)
@@ -432,10 +438,14 @@ class SVM:
                     state.memory[offset] = BitVec("mem_" + str(offset), 256)
                     data = state.memory[offset]
 
+                logging.debug("Load from memory[" + str(offset) + "]: " + str(data))
+
                 state.stack.append(data)
 
             elif op == 'MSTORE':
                 offset, value = state.stack.pop(), state.stack.pop()
+
+                logging.debug("Store to memory[" + str(offset) + "]: " + str(value))
 
                 state.memory[offset] = value
 
@@ -445,38 +455,49 @@ class SVM:
                 state.memory[offset] = value % 256
 
             elif op == 'SLOAD':
-                offset = state.stack.pop()
-                logging.debug("Storage access at offset " + str(offset))
+                index = state.stack.pop()
+                logging.debug("Storage access at index " + str(index))
+
+                if type(index) == BitVecRef:
+                    # SLOAD from hash offset
+
+                    k = sha3.keccak_512()
+                    k.update(bytes(str(index), 'utf-8'))
+                    index = k.hexdigest()[:8]
 
                 try:
-                    data = self.storage[offset]
+                    data = self.storage[index]
                 except KeyError:
-                    data = BitVec("storage_" + str(offset), 256)
-                    self.storage[offset] = data
+                    data = BitVec("storage_" + str(index), 256)
+                    self.storage[index] = data
 
                 state.stack.append(data)
 
             elif op == 'SSTORE':
-                offset, value = state.stack.pop(), state.stack.pop()
+                index, value = state.stack.pop(), state.stack.pop()
 
                 self.function_state['sstore_called'] = True
 
-                if type(offset) == BitVecRef:
-                    logging.debug("Not supported: SSTORE to hash offset")
-                else:
-                    i = offset.as_long()
+                logging.debug("Write to storage[" + str(index) + "] at node " + str(start_addr))
 
-                    logging.debug("Write to storage[" + str(offset) + "] at node " + str(start_addr))
+                if type(index) == BitVecRef:
+                    # SSTORE to hash offset
 
-                    try:
-                        self.sstor_node_lists[i].append(start_addr)
-                    except KeyError:
-                        self.sstor_node_lists[i] = [start_addr]
+                    k = sha3.keccak_512()
+                    k.update(bytes(str(index), 'utf-8'))
+                    index = k.hexdigest()[:8]
 
-                    try:
-                        self.storage[i]
-                    except KeyError:
-                        self.storage[i] = BitVec("storage_" + str(offset), 256)
+                    self.storage[index] = value
+
+                try:
+                    self.sstor_node_lists[index].append(start_addr)
+                except KeyError:
+                    self.sstor_node_lists[index] = [start_addr]
+
+                try:
+                    self.storage[index]
+                except KeyError:
+                    self.storage[index] = BitVec("storage_" + str(index), 256)
 
             elif op == 'JUMP':
 
@@ -556,7 +577,10 @@ class SVM:
                             start_addr = self.disassembly.instruction_list[state.pc]['address']
                             self.nodes[start_addr] = new_node
 
-                            self.edges.append(Edge(node.start_addr, start_addr, JumpType.CONDITIONAL, Not(condition)))
+                            if (type(condition) == BoolRef):
+                                self.edges.append(Edge(node.start_addr, start_addr, JumpType.CONDITIONAL, Not(condition)))
+                            else:
+                                self.edges.append(Edge(node.start_addr, start_addr, JumpType.CONDITIONAL, condition == 0))                               
 
                             return node
 
