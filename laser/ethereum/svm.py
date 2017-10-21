@@ -85,6 +85,7 @@ class SVM:
         self.edges = []
         self.paths = {}
         self.send_eth_locs = []
+        self.suicide_locs = []
         self.reentrancy_funcs = []
         self.sstor_node_lists = {}
         self.storage = {}
@@ -498,6 +499,8 @@ class SVM:
                     index = k.hexdigest()[:8]
 
                     self.storage[index] = value
+                else:
+                    index = str(index)
 
                 try:
                     self.sstor_node_lists[index].append(start_addr)
@@ -651,7 +654,7 @@ class SVM:
                 return node
 
             elif op == 'SUICIDE':
-                # logging.debug("Returning from block " +  str(start_addr))
+                self.suicide_locs.append({'address': start_addr, 'function_name': self.function_state['current_func']})
                 return node
 
             elif op == 'REVERT':

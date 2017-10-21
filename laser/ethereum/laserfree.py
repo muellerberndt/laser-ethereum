@@ -1,5 +1,5 @@
 from . import svm
-from .modules import unchecked_send
+from .modules import unchecked_send, unchecked_suicide
 import logging
 
 def fire(disassembly):
@@ -10,4 +10,5 @@ def fire(disassembly):
 
     _svm.sym_exec()
 
-    return unchecked_send.execute(_svm)
+    unchecked_send.execute(_svm)
+    unchecked_suicide.execute(_svm)

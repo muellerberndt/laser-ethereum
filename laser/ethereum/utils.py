@@ -106,11 +106,13 @@ def satisfy_recursively(svm, node_addr, models = [], visited = []):
 
     visited.append(node_addr)
 
-    logging.info("Trying to solve path for node " + str(node_addr))
+    logging.info("Trying to solve constraints for node " + str(node_addr))
 
     for path in svm.paths[node_addr]:
 
         can_solve = True
+
+        # Get constraints on storage locations
 
         constraints = storage_constraints_for_path(svm, path)
 
@@ -134,8 +136,7 @@ def satisfy_recursively(svm, node_addr, models = [], visited = []):
 
                         logging.info("Satisfy returned " + str(m))
 
-                        if m is not None:
-                            models.append(m)
+                        if m:
                             solved += 1
                             break
 
@@ -166,10 +167,14 @@ def satisfy_recursively(svm, node_addr, models = [], visited = []):
 
             if (model == unsat):
                 logging.info("Unsatisfiable")
-                return None
+                return False
             else:
-                logging.info("Model found")
-                return model
+                models.append(model)
+                logging.info("Model found")               
+                return True
+                
+        else:
+            return False
 
 
 
