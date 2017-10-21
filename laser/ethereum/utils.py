@@ -77,7 +77,7 @@ def solver_for_path(svm, path):
 
     for edge in path:
         if edge.condition is not None:
-            s.add(edge.condition)
+            solver.add(edge.condition)
 
     return solver
 
