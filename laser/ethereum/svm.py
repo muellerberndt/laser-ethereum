@@ -1,5 +1,6 @@
 from enum import Enum
 from laser.ethereum import utils
+from .gascost import gascost
 from z3 import *
 import copy
 import logging
@@ -191,8 +192,6 @@ class SVM:
 
         halt = False
 
-        # instr = self.disassembly.instruction_list[state.pc]
-
         while not halt:
 
             instr = self.disassembly.instruction_list[state.pc]
@@ -209,475 +208,478 @@ class SVM:
             if op.startswith("PUSH"):
                 value = BitVecVal(int(instr['argument'][2:], 16), 256)
                 state.stack.append(value)
+                state.gas -= gascost['PUSH']
 
             elif op.startswith('DUP'):
                 depth = int(op[3:])
                 state.stack.append(state.stack[-depth])
+                state.gas -= gascost['DUP']
 
             elif op.startswith('SWAP'):
                 depth = int(op[4:])
                 temp = state.stack[-depth - 1]
                 state.stack[-depth - 1] = state.stack[-1]
                 state.stack[-1] = temp
+                state.gas -= gascost['SWAP']
 
-            elif op == 'POP':
-                state.stack.pop()
+            else:
+                state.gas -= gascost[op]
 
-            # Bitwise ops
+                if op == 'POP':
+                    state.stack.pop()
 
-            elif op == 'AND':
-                op1 = state.stack.pop() 
-                op2 = state.stack.pop()
+                # Bitwise ops
 
-                state.stack.append(op1 & op2)
+                elif op == 'AND':
+                    state.stack.append(state.stack.pop() & state.stack.pop())
 
-            elif op == 'OR':
-                op1 = state.stack.pop()
-                op2 = state.stack.pop()
+                elif op == 'OR':
+                    op1 = state.stack.pop()
+                    op2 = state.stack.pop()
 
-                if (type(op1) == BoolRef):
-                    op1 = If(op1, BitVecVal(1,256), BitVecVal(0,256))
+                    if (type(op1) == BoolRef):
+                        op1 = If(op1, BitVecVal(1,256), BitVecVal(0,256))
 
-                if (type(op2) == BoolRef):
-                    op2 = If(op2, BitVecVal(1,256), BitVecVal(0,256))
+                    if (type(op2) == BoolRef):
+                        op2 = If(op2, BitVecVal(1,256), BitVecVal(0,256))
 
-                state.stack.append(op1 | op2)
+                    state.stack.append(op1 | op2)
 
-            elif op == 'XOR':
-                state.stack.append(state.stack.pop() ^ state.stack.pop())
+                elif op == 'XOR':
+                    state.stack.append(state.stack.pop() ^ state.stack.pop())
 
-            elif op == 'NOT':
-                state.stack.append(TT256M1 - state.stack.pop())
+                elif op == 'NOT':
+                    state.stack.append(TT256M1 - state.stack.pop())
 
-            elif op == 'BYTE':
-                s0, s1 = state.stack.pop(), state.stack.pop()
+                elif op == 'BYTE':
+                    s0, s1 = state.stack.pop(), state.stack.pop()
 
-                if s0 >= 32:
-                    state.stack.append(0)
-                else:
-                    state.stack.append((s1 // 256 ** (31 - s0)) % 256)
-
-            # Arithmetics
-
-            elif op == "ADD":
-                state.stack.append((utils.pop_bitvec(state) + utils.pop_bitvec(state)))
-
-            elif op == "SUB":
-                state.stack.append((utils.pop_bitvec(state) - utils.pop_bitvec(state)))
-
-            elif op == 'MUL':
-                state.stack.append(utils.pop_bitvec(state) * utils.pop_bitvec(state))
-
-            elif op == 'DIV':
-                s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
-                state.stack.append(UDiv(s0, s1))
-
-            elif op == 'MOD':
-                s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
-                state.stack.append(0 if s1 == 0 else s0 % s1)
-
-            elif op == 'SDIV':
-                s0, s1 = utils.to_signed(utils.pop_bitvec(state)), utils.to_signed(utils.pop_bitvec(state))
-                state.stack.append(0 if s1 == 0 else (abs(s0) // abs(s1) *
-                                              (-1 if s0 * s1 < 0 else 1)) & TT256M1)
-
-            elif op == 'SMOD':
-                s0, s1 = utils.to_signed(utils.pop_bitvec(state)), utils.to_signed(utils.pop_bitvec(state))
-                state.stack.append(0 if s1 == 0 else (abs(s0) % abs(s1) *
-                                              (-1 if s0 < 0 else 1)) & TT256M1)
-
-            elif op == 'ADDMOD':
-                s0, s1, s2 = utils.pop_bitvec(state), utils.pop_bitvec(state), utils.pop_bitvec(state)
-                state.stack.append((s0 + s1) % s2 if s2 else 0)
-
-            elif op == 'MULMOD':
-                s0, s1, s2 = utils.pop_bitvec(state), utils.pop_bitvec(state), utils.pop_bitvec(state)
-                state.stack.append((s0 * s1) % s2 if s2 else 0)
-
-            elif op == 'EXP':
-                # we only implement 2 ** x
-                base, exponent = state.stack.pop(), state.stack.pop()
-
-                if (base.as_long() == 2):
-                    if exponent == 0:
-                        state.stack.append(BitVecVal(1, 256))
+                    if s0 >= 32:
+                        state.stack.append(0)
                     else:
-                        state.stack.append(base << (exponent - 1))
+                        state.stack.append((s1 // 256 ** (31 - s0)) % 256)
 
-                else:
-                    state.stack.append(base)
+                # Arithmetics
 
-            elif op == 'SIGNEXTEND':
-                s0, s1 = state.stack.pop(), state.stack.pop()
-                if s0 <= 31:
-                    testbit = s0 * 8 + 7
-                    if s1 & (1 << testbit):
-                        state.stack.append(s1 | (TT256 - (1 << testbit)))
+                elif op == "ADD":
+                    state.stack.append((utils.pop_bitvec(state) + utils.pop_bitvec(state)))
+
+                elif op == "SUB":
+                    state.stack.append((utils.pop_bitvec(state) - utils.pop_bitvec(state)))
+
+                elif op == 'MUL':
+                    state.stack.append(utils.pop_bitvec(state) * utils.pop_bitvec(state))
+
+                elif op == 'DIV':
+                    s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
+                    state.stack.append(UDiv(s0, s1))
+
+                elif op == 'MOD':
+                    s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
+                    state.stack.append(0 if s1 == 0 else s0 % s1)
+
+                elif op == 'SDIV':
+                    s0, s1 = utils.to_signed(utils.pop_bitvec(state)), utils.to_signed(utils.pop_bitvec(state))
+                    state.stack.append(0 if s1 == 0 else (abs(s0) // abs(s1) *
+                                                  (-1 if s0 * s1 < 0 else 1)) & TT256M1)
+
+                elif op == 'SMOD':
+                    s0, s1 = utils.to_signed(utils.pop_bitvec(state)), utils.to_signed(utils.pop_bitvec(state))
+                    state.stack.append(0 if s1 == 0 else (abs(s0) % abs(s1) *
+                                                  (-1 if s0 < 0 else 1)) & TT256M1)
+
+                elif op == 'ADDMOD':
+                    s0, s1, s2 = utils.pop_bitvec(state), utils.pop_bitvec(state), utils.pop_bitvec(state)
+                    state.stack.append((s0 + s1) % s2 if s2 else 0)
+
+                elif op == 'MULMOD':
+                    s0, s1, s2 = utils.pop_bitvec(state), utils.pop_bitvec(state), utils.pop_bitvec(state)
+                    state.stack.append((s0 * s1) % s2 if s2 else 0)
+
+                elif op == 'EXP':
+                    # we only implement 2 ** x
+                    base, exponent = state.stack.pop(), state.stack.pop()
+
+                    if (base.as_long() == 2):
+                        if exponent == 0:
+                            state.stack.append(BitVecVal(1, 256))
+                        else:
+                            state.stack.append(base << (exponent - 1))
+
                     else:
-                        state.stack.append(s1 & ((1 << testbit) - 1))
-                else:
-                    state.stack.append(s1)
+                        state.stack.append(base)
 
-            # Comparisons
+                elif op == 'SIGNEXTEND':
+                    s0, s1 = state.stack.pop(), state.stack.pop()
+                    if s0 <= 31:
+                        testbit = s0 * 8 + 7
+                        if s1 & (1 << testbit):
+                            state.stack.append(s1 | (TT256 - (1 << testbit)))
+                        else:
+                            state.stack.append(s1 & ((1 << testbit) - 1))
+                    else:
+                        state.stack.append(s1)
 
-            elif op == 'LT':
+                # Comparisons
 
-                exp = ULT(utils.pop_bitvec(state), utils.pop_bitvec(state))
-                state.stack.append(exp)
+                elif op == 'LT':
 
-            elif op == 'GT':
+                    exp = ULT(utils.pop_bitvec(state), utils.pop_bitvec(state))
+                    state.stack.append(exp)
 
-                exp = UGT(utils.pop_bitvec(state), utils.pop_bitvec(state))
-                state.stack.append(exp)
+                elif op == 'GT':
 
-            elif op == 'SLT':
+                    exp = UGT(utils.pop_bitvec(state), utils.pop_bitvec(state))
+                    state.stack.append(exp)
 
-                exp = utils.pop_bitvec(state) < utils.pop_bitvec(state)
-                state.stack.append(exp)
+                elif op == 'SLT':
 
-            elif op == 'SGT':
+                    exp = utils.pop_bitvec(state) < utils.pop_bitvec(state)
+                    state.stack.append(exp)
 
-                exp = utils.pop_bitvec(state) > utils.pop_bitvec(state)
-                state.stack.append(exp)
+                elif op == 'SGT':
 
-            elif op == 'EQ':
+                    exp = utils.pop_bitvec(state) > utils.pop_bitvec(state)
+                    state.stack.append(exp)
 
-                op1 = state.stack.pop()
-                op2 = state.stack.pop()
+                elif op == 'EQ':
 
-                if(type(op1) == BoolRef):
-                    op1 = If(op1, BitVecVal(1,256), BitVecVal(0,256))
+                    op1 = state.stack.pop()
+                    op2 = state.stack.pop()
 
-                if(type(op2) == BoolRef):
-                    op2 = If(op2, BitVecVal(1,256), BitVecVal(0,256))
+                    if(type(op1) == BoolRef):
+                        op1 = If(op1, BitVecVal(1,256), BitVecVal(0,256))
 
-                exp = op1 == op2
+                    if(type(op2) == BoolRef):
+                        op2 = If(op2, BitVecVal(1,256), BitVecVal(0,256))
 
-                state.stack.append(exp)
+                    exp = op1 == op2
 
-            elif op == 'ISZERO':
+                    state.stack.append(exp)
 
-                val = state.stack.pop()
+                elif op == 'ISZERO':
 
-                if (type(val) == BoolRef):
-                   exp = val == False
-                else:   
-                   exp = val == 0
+                    val = state.stack.pop()
 
-                state.stack.append(exp)
+                    if (type(val) == BoolRef):
+                       exp = val == False
+                    else:   
+                       exp = val == 0
 
-             # Call data
+                    state.stack.append(exp)
 
-            elif op == 'CALLVALUE':
-                state.stack.append(self.env['callvalue'])
+                 # Call data
 
-            elif op == 'CALLDATALOAD':
-                offset = state.stack.pop()
-                state.stack.append(state.calldata_alloc(offset))
+                elif op == 'CALLVALUE':
+                    state.stack.append(self.env['callvalue'])
 
-            elif op == 'CALLDATASIZE':
-                state.stack.append(BitVec("calldatasize", 256))
+                elif op == 'CALLDATALOAD':
+                    offset = state.stack.pop()
+                    state.stack.append(state.calldata_alloc(offset))
 
-            elif op == 'CALLDATACOPY':
-                mstart, dstart, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
+                elif op == 'CALLDATASIZE':
+                    state.stack.append(BitVec("calldatasize", 256))
 
-            # Control flow
+                elif op == 'CALLDATACOPY':
+                    mstart, dstart, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
 
-            elif op == 'STOP':
-                return node
+                # Control flow
 
-            # Environment
-
-            elif op == 'ADDRESS':
-                state.stack.append(self.env['address_to'])
-
-            elif op == 'BALANCE':
-                addr = state.stack.pop()
-                state.stack.append(BitVec("balance_at_" + str(addr), 256))
-
-            elif op == 'ORIGIN':
-                state.stack.append(self.env['origin'])
-
-            elif op == 'CALLER':
-                state.stack.append(self.env['caller'])
-
-            elif op == 'CODESIZE':
-                state.stack.append(len(self.disassembly.instruction_list))
-
-            if op == 'SHA3':
-                s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
-
-                mem = state.memory[s0]
-
-                # Don't actually calculate the hash
-
-                state.stack.append(BitVec("SHA3(" + str(simplify(mem)) + ")", 256))
-
-            elif op == 'GASPRICE':
-                state.stack.append(0)
-
-            elif op == 'CODECOPY':
-                start, s1, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
-                # Not implemented
-
-            elif op == 'EXTCODESIZE':
-                addr = state.stack.pop()
-                state.stack.append(BitVec("extcodesize", 256))
-
-            elif op == 'EXTCODECOPY':
-                addr = state.stack.pop()
-                start, s2, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
-                # Not implemented
-
-            elif op == 'BLOCKHASH':
-                state.stack.append(BitVec("blockhash", 256))
-
-            elif op == 'COINBASE':
-                state.stack.append(BitVec("coinbase", 256))
-
-            elif op == 'TIMESTAMP':
-                state.stack.append(BitVec("timestamp", 256))
-
-            elif op == 'NUMBER':
-                state.stack.append(BitVec("block_number", 256))
-
-            elif op == 'DIFFICULTY':
-                state.stack.append(BitVec("block_difficulty", 256))
-
-            elif op == 'GASLIMIT':
-                state.stack.append(BitVec("block_gaslimit", 256))
-
-            elif op == 'MLOAD':
-                offset = state.stack.pop()
-
-                try:
-                    data = state.memory[offset]
-                except KeyError:
-                    state.memory[offset] = BitVec("mem_" + str(offset), 256)
-                    data = state.memory[offset]
-
-                logging.debug("Load from memory[" + str(offset) + "]: " + str(data))
-
-                state.stack.append(data)
-
-            elif op == 'MSTORE':
-                offset, value = state.stack.pop(), state.stack.pop()
-
-                logging.debug("Store to memory[" + str(offset) + "]: " + str(value))
-
-                state.memory[offset] = value
-
-            elif op == 'MSTORE8':
-                offset, value = state.stack.pop(), state.stack.pop()
-
-                state.memory[offset] = value % 256
-
-            elif op == 'SLOAD':
-                index = state.stack.pop()
-                logging.debug("Storage access at index " + str(index))
-
-                if type(index) == BitVecRef:
-                    # SLOAD from hash offset
-
-                    k = sha3.keccak_512()
-                    k.update(bytes(str(index), 'utf-8'))
-                    index = k.hexdigest()[:8]
-
-                try:
-                    data = self.storage[index]
-                except KeyError:
-                    data = BitVec("storage_" + str(index), 256)
-                    self.storage[index] = data
-
-                state.stack.append(data)
-
-            elif op == 'SSTORE':
-                index, value = state.stack.pop(), state.stack.pop()
-
-                self.function_state['sstore_called'] = True
-
-                logging.debug("Write to storage[" + str(index) + "] at node " + str(start_addr))
-
-                if type(index) == BitVecRef:
-                    # SSTORE to hash offset
-
-                    k = sha3.keccak_512()
-                    k.update(bytes(str(index), 'utf-8'))
-                    index = k.hexdigest()[:8]
-
-                    self.storage[index] = value
-                else:
-                    index = str(index)
-
-                try:
-                    self.sstor_node_lists[index].append(start_addr)
-                except KeyError:
-                    self.sstor_node_lists[index] = [start_addr]
-
-                try:
-                    self.storage[index]
-                except KeyError:
-                    self.storage[index] = BitVec("storage_" + str(index), 256)
-
-            elif op == 'JUMP':
-
-                jump_addr = state.stack.pop()
-
-                if (type(jump_addr) == BitVecRef):
-                    logging.debug("Invalid jump argument: JUMP <bitvector> at " + str(self.disassembly.instruction_list[state.pc]['address']))
-
+                elif op == 'STOP':
                     return node
 
-                if (depth < self.max_depth):
+                # Environment
 
-                    jump_addr = jump_addr.as_long()
+                elif op == 'ADDRESS':
+                    state.stack.append(self.env['address_to'])
 
-                    logging.debug("JUMP to " + str(jump_addr))
+                elif op == 'BALANCE':
+                    addr = state.stack.pop()
+                    state.stack.append(BitVec("balance_at_" + str(addr), 256))
 
-                    i = utils.get_instruction_index(self.disassembly.instruction_list, jump_addr)
+                elif op == 'ORIGIN':
+                    state.stack.append(self.env['origin'])
 
-                    if self.disassembly.instruction_list[i]['opcode'] == "JUMPDEST":
-                        logging.debug("Current nodes: " + str(self.nodes))
+                elif op == 'CALLER':
+                    state.stack.append(self.env['caller'])
 
-                        if jump_addr not in self.addr_visited:
-                            self.addr_visited.append(jump_addr)
-                            new_state = copy.deepcopy(state)
-                            new_state.pc = i
-                            new_node = self._sym_exec(new_state, depth + 1)
-                            self.nodes[jump_addr] = new_node
+                elif op == 'CODESIZE':
+                    state.stack.append(len(self.disassembly.instruction_list))
 
-                        self.edges.append(Edge(node.start_addr, jump_addr, JumpType.UNCONDITIONAL))
+                if op == 'SHA3':
+                    s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
+
+                    mem = state.memory[s0]
+
+                    # Don't actually calculate the hash
+
+                    state.stack.append(BitVec("SHA3(" + str(simplify(mem)) + ")", 256))
+
+                elif op == 'GASPRICE':
+                    state.stack.append(0)
+
+                elif op == 'CODECOPY':
+                    start, s1, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
+                    # Not implemented
+
+                elif op == 'EXTCODESIZE':
+                    addr = state.stack.pop()
+                    state.stack.append(BitVec("extcodesize", 256))
+
+                elif op == 'EXTCODECOPY':
+                    addr = state.stack.pop()
+                    start, s2, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
+                    # Not implemented
+
+                elif op == 'BLOCKHASH':
+                    state.stack.append(BitVec("blockhash", 256))
+
+                elif op == 'COINBASE':
+                    state.stack.append(BitVec("coinbase", 256))
+
+                elif op == 'TIMESTAMP':
+                    state.stack.append(BitVec("timestamp", 256))
+
+                elif op == 'NUMBER':
+                    state.stack.append(BitVec("block_number", 256))
+
+                elif op == 'DIFFICULTY':
+                    state.stack.append(BitVec("block_difficulty", 256))
+
+                elif op == 'GASLIMIT':
+                    state.stack.append(BitVec("block_gaslimit", 256))
+
+                elif op == 'MLOAD':
+                    offset = state.stack.pop()
+
+                    try:
+                        data = state.memory[offset]
+                    except KeyError:
+                        state.memory[offset] = BitVec("mem_" + str(offset), 256)
+                        data = state.memory[offset]
+
+                    logging.debug("Load from memory[" + str(offset) + "]: " + str(data))
+
+                    state.stack.append(data)
+
+                elif op == 'MSTORE':
+                    offset, value = state.stack.pop(), state.stack.pop()
+
+                    logging.debug("Store to memory[" + str(offset) + "]: " + str(value))
+
+                    state.memory[offset] = value
+
+                elif op == 'MSTORE8':
+                    offset, value = state.stack.pop(), state.stack.pop()
+
+                    state.memory[offset] = value % 256
+
+                elif op == 'SLOAD':
+                    index = state.stack.pop()
+                    logging.debug("Storage access at index " + str(index))
+
+                    if type(index) == BitVecRef:
+                        # SLOAD from hash offset
+
+                        k = sha3.keccak_512()
+                        k.update(bytes(str(index), 'utf-8'))
+                        index = k.hexdigest()[:8]
+
+                    try:
+                        data = self.storage[index]
+                    except KeyError:
+                        data = BitVec("storage_" + str(index), 256)
+                        self.storage[index] = data
+
+                    state.stack.append(data)
+
+                elif op == 'SSTORE':
+                    index, value = state.stack.pop(), state.stack.pop()
+
+                    self.function_state['sstore_called'] = True
+
+                    logging.debug("Write to storage[" + str(index) + "] at node " + str(start_addr))
+
+                    if type(index) == BitVecRef:
+                        # SSTORE to hash offset
+
+                        k = sha3.keccak_512()
+                        k.update(bytes(str(index), 'utf-8'))
+                        index = k.hexdigest()[:8]
+
+                        self.storage[index] = value
                     else:
-                        self.trace += "Skipping invalid jump destination"
+                        index = str(index)
 
-                return node
+                    try:
+                        self.sstor_node_lists[index].append(start_addr)
+                    except KeyError:
+                        self.sstor_node_lists[index] = [start_addr]
 
-            elif op == 'JUMPI':
-                jump_addr, condition = state.stack.pop().as_long(), state.stack.pop()
+                    try:
+                        self.storage[index]
+                    except KeyError:
+                        self.storage[index] = BitVec("storage_" + str(index), 256)
 
-                if (depth < self.max_depth):
+                elif op == 'JUMP':
 
-                    i = utils.get_instruction_index(self.disassembly.instruction_list, jump_addr)
+                    jump_addr = state.stack.pop()
 
-                    logging.debug("JUMPI to " + str(jump_addr))
+                    if (type(jump_addr) == BitVecRef):
+                        logging.debug("Invalid jump argument: JUMP <bitvector> at " + str(self.disassembly.instruction_list[state.pc]['address']))
 
-                    if not i:
-                        logging.debug("Invalid jump destination: " + str(jump_addr))
-                    else:
-                        instr = self.disassembly.instruction_list[i]
+                        return node
 
-                        # Add new node for condition == True
+                    if (depth < self.max_depth):
 
-                        if instr['opcode'] != "JUMPDEST":
-                            logging.debug("Invalid jump destination: " + str(jump_addr))
-                        else:
+                        jump_addr = jump_addr.as_long()
+
+                        logging.debug("JUMP to " + str(jump_addr))
+
+                        i = utils.get_instruction_index(self.disassembly.instruction_list, jump_addr)
+
+                        if self.disassembly.instruction_list[i]['opcode'] == "JUMPDEST":
+                            logging.debug("Current nodes: " + str(self.nodes))
+
                             if jump_addr not in self.addr_visited:
-
                                 self.addr_visited.append(jump_addr)
-
                                 new_state = copy.deepcopy(state)
-
                                 new_state.pc = i
-
                                 new_node = self._sym_exec(new_state, depth + 1)
                                 self.nodes[jump_addr] = new_node
 
-                            logging.debug("Adding edge with condition: " + str(condition))
+                            self.edges.append(Edge(node.start_addr, jump_addr, JumpType.UNCONDITIONAL))
+                        else:
+                            self.trace += "Skipping invalid jump destination"
 
-                            self.edges.append(Edge(node.start_addr, jump_addr, JumpType.CONDITIONAL, condition))
+                    return node
 
-                        if (self.branch_at_jumpi):
+                elif op == 'JUMPI':
+                    jump_addr, condition = state.stack.pop().as_long(), state.stack.pop()
 
-                            # Add new node for condition == False
+                    if (depth < self.max_depth):
 
-                            new_state = copy.deepcopy(state)
+                        i = utils.get_instruction_index(self.disassembly.instruction_list, jump_addr)
 
-                            new_node = self._sym_exec(new_state, depth)
+                        logging.debug("JUMPI to " + str(jump_addr))
 
-                            start_addr = self.disassembly.instruction_list[state.pc]['address']
-                            self.nodes[start_addr] = new_node
+                        if not i:
+                            logging.debug("Invalid jump destination: " + str(jump_addr))
+                        else:
+                            instr = self.disassembly.instruction_list[i]
 
-                            if (type(condition) == BoolRef):
-                                self.edges.append(Edge(node.start_addr, start_addr, JumpType.CONDITIONAL, Not(condition)))
+                            # Add new node for condition == True
+
+                            if instr['opcode'] != "JUMPDEST":
+                                logging.debug("Invalid jump destination: " + str(jump_addr))
                             else:
-                                self.edges.append(Edge(node.start_addr, start_addr, JumpType.CONDITIONAL, condition == 0))                               
+                                if jump_addr not in self.addr_visited:
 
-                            return node
+                                    self.addr_visited.append(jump_addr)
+
+                                    new_state = copy.deepcopy(state)
+
+                                    new_state.pc = i
+
+                                    new_node = self._sym_exec(new_state, depth + 1)
+                                    self.nodes[jump_addr] = new_node
+
+                                logging.debug("Adding edge with condition: " + str(condition))
+
+                                self.edges.append(Edge(node.start_addr, jump_addr, JumpType.CONDITIONAL, condition))
+
+                            if (self.branch_at_jumpi):
+
+                                # Add new node for condition == False
+
+                                new_state = copy.deepcopy(state)
+
+                                new_node = self._sym_exec(new_state, depth)
+
+                                start_addr = self.disassembly.instruction_list[state.pc]['address']
+                                self.nodes[start_addr] = new_node
+
+                                if (type(condition) == BoolRef):
+                                    self.edges.append(Edge(node.start_addr, start_addr, JumpType.CONDITIONAL, Not(condition)))
+                                else:
+                                    self.edges.append(Edge(node.start_addr, start_addr, JumpType.CONDITIONAL, condition == 0))                               
+
+                                return node
 
 
-            elif op == 'PC':
-                state.stack.append(state.pc - 1)
+                elif op == 'PC':
+                    state.stack.append(state.pc - 1)
 
-            elif op == 'MSIZE':
-                state.stack.append(BitVec("msize", 256))
+                elif op == 'MSIZE':
+                    state.stack.append(BitVec("msize", 256))
 
-            elif op == 'GAS':
-                state.stack.append(10000000)
+                elif op == 'GAS':
+                    state.stack.append(state.gas)
 
-            elif op.startswith('LOG'):
-                depth = int(op[3:])
-                mstart, msz = state.stack.pop(), state.stack.pop()
-                topics = [state.stack.pop() for x in range(depth)]
-                # Not supported
+                elif op.startswith('LOG'):
+                    depth = int(op[3:])
+                    mstart, msz = state.stack.pop(), state.stack.pop()
+                    topics = [state.stack.pop() for x in range(depth)]
+                    # Not supported
 
-            elif op == 'CREATE':
-                value, mstart, msz = state.stack.pop(), state.stack.pop(), state.stack.pop()
-                # Not supported
-                state.stack.append(0)
+                elif op == 'CREATE':
+                    value, mstart, msz = state.stack.pop(), state.stack.pop(), state.stack.pop()
+                    # Not supported
+                    state.stack.append(0)
 
-            elif op == 'CALL':
-                gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
-                state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
+                elif op == 'CALL':
+                    gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
+                    state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
 
-                logging.info("CALL")
+                    logging.info("CALL")
 
-                for o in [gas, to, value]:
-                    utils.debug_operand(o)
+                    for o in [gas, to, value]:
+                        utils.debug_operand(o)
 
-                send_eth = False
+                    send_eth = False
 
-                if (type(value) is not BitVecNumRef):
-                    send_eth = True
-                elif value.as_long() > 0:
-                    send_eth = True
+                    if (type(value) is not BitVecNumRef):
+                        send_eth = True
+                    elif value.as_long() > 0:
+                        send_eth = True
 
-                if (send_eth):
-                    logging.debug("CALL with non-zero value: " + str(value))
-                    self.send_eth_locs.append({'address': start_addr, 'function_name': self.function_state['current_func']})
+                    if (send_eth):
+                        logging.debug("CALL with non-zero value: " + str(value))
+                        self.send_eth_locs.append({'address': start_addr, 'function_name': self.function_state['current_func']})
 
-                    if not self.function_state['sstore_called']:
-                        logging.info("Possible reentrancy at " + self.function_state['current_func'])
-                        self.reentrancy_funcs.append(self.function_state['current_func_addr'])
+                        if not self.function_state['sstore_called']:
+                            logging.info("Possible reentrancy at " + self.function_state['current_func'])
+                            self.reentrancy_funcs.append(self.function_state['current_func_addr'])
 
-                if (self.load_libs):
-                    code = dynamic_loader_cb(str(to))
-                    debug.info("Code returned by dynamic loader:" + code)
+                    if (self.load_libs):
+                        code = dynamic_loader_cb(str(to))
+                        debug.info("Code returned by dynamic loader:" + code)
 
-                ret = BitVec("retval_" + str(self.disassembly.instruction_list[state.pc]['address']) + "_" + str(randint(0, 1000)), 256)
+                    ret = BitVec("retval_" + str(self.disassembly.instruction_list[state.pc]['address']) + "_" + str(randint(0, 1000)), 256)
 
-                state.stack.append(ret)
+                    state.stack.append(ret)
 
-            elif op == 'CALLCODE':
-                gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
-                state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
-                # Not supported          
-                state.stack.append(BitVecVal(0, 256))
+                elif op == 'CALLCODE':
+                    gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
+                    state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
+                    # Not supported          
+                    state.stack.append(BitVecVal(0, 256))
 
-            elif op == 'RETURN':
-                offset, length = state.stack.pop(), state.stack.pop()
-                # Not supported        
-                # logging.debug("Returning from block " +  str(start_addr))
-                return node
+                elif op == 'RETURN':
+                    offset, length = state.stack.pop(), state.stack.pop()
+                    # Not supported        
+                    # logging.debug("Returning from block " +  str(start_addr))
+                    return node
 
-            elif op == 'SUICIDE':
-                self.suicide_locs.append({'address': start_addr, 'function_name': self.function_state['current_func']})
-                return node
+                elif op == 'SUICIDE':
+                    self.suicide_locs.append({'address': start_addr, 'function_name': self.function_state['current_func']})
+                    return node
 
-            elif op == 'REVERT':
-                # logging.debug("Returning from block " +  str(start_addr))
-                return node
+                elif op == 'REVERT':
+                    # logging.debug("Returning from block " +  str(start_addr))
+                    return node
 
-            elif op == 'INVALID':
-                # logging.debug("Returning from block " +  str(start_addr))
-                return node
+                elif op == 'INVALID':
+                    # logging.debug("Returning from block " +  str(start_addr))
+                    return node
 
