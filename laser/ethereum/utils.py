@@ -185,3 +185,7 @@ def satisfy(svm, node_addr):
     satisfy_recursively(svm, node_addr, models)
 
     return models
+
+
+def debug_operand(operand):
+    logging.info(str(type(operand)) + ", " + str(simplify(operand)))

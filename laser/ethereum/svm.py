@@ -31,6 +31,7 @@ class State():
         self.memory = {}
         self.stack = []
         self.pc = 0
+        self.gas = 1000000 # startgas
 
     def calldata_alloc(self, offset):
         data = BitVec("calldata_" + str(offset), 256)
@@ -76,9 +77,10 @@ class Edge:
 
         return {'from': self.node_from, 'to': self.node_to}
 
+
 class SVM:
 
-    def __init__(self, disassembly, max_depth=MAX_DEPTH, branch_at_jumpi = False):
+    def __init__(self, disassembly, max_depth=MAX_DEPTH, branch_at_jumpi = False, dynamic_loader_cb = None):
         self.disassembly = disassembly
         self.nodes = {}
         self.addr_visited = []
@@ -100,6 +102,11 @@ class SVM:
         self.env['caller'] = BitVec("caller", 256)
         self.env['origin'] = BitVec("origin", 256)
         self.env['address_to'] = BitVec("address_to", 256) 
+
+        if (dynamic_loader_cb is not None):
+            self.load_libs = True
+        else:
+            self.load_libs = False
 
 
     def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
@@ -184,7 +191,7 @@ class SVM:
 
         halt = False
 
-        instr = self.disassembly.instruction_list[state.pc]
+        # instr = self.disassembly.instruction_list[state.pc]
 
         while not halt:
 
@@ -622,6 +629,11 @@ class SVM:
                 gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
                 state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
 
+                logging.info("CALL")
+
+                for o in [gas, to, value]:
+                    utils.debug_operand(o)
+
                 send_eth = False
 
                 if (type(value) is not BitVecNumRef):
@@ -636,6 +648,10 @@ class SVM:
                     if not self.function_state['sstore_called']:
                         logging.info("Possible reentrancy at " + self.function_state['current_func'])
                         self.reentrancy_funcs.append(self.function_state['current_func_addr'])
+
+                if (self.load_libs):
+                    code = dynamic_loader_cb(str(to))
+                    debug.info("Code returned by dynamic loader:" + code)
 
                 ret = BitVec("retval_" + str(self.disassembly.instruction_list[state.pc]['address']) + "_" + str(randint(0, 1000)), 256)
 
