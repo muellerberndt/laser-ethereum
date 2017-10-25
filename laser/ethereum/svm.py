@@ -39,15 +39,32 @@ class State():
         return data
 
 
+class Module:
+
+    def __init__(self, name):
+        self.name = name
+        self.nodes = []
+
+    def __str__(self):
+        return name
+
+
 class Node:
 
-    def __init__(self, start_addr=0):
+    def __init__(self, start_addr=0, module = None):
         self.start_addr = start_addr
         self.instruction_list = []
+
+        if module is not None:
+            self.module = module
+        else:
+            self.module = Module("MAIN")
+
 
     def __str__(self):
         return str(self.as_dict())
         
+
     def as_dict(self):
 
         code = ""
