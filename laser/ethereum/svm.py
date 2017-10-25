@@ -41,12 +41,9 @@ class State():
 
 class Module:
 
-    def __init__(self, name):
-        self.name = name
+    def __init__(self, disassembly):
+        self.disassembly = disassembly
         self.nodes = []
-
-    def __str__(self):
-        return name
 
 
 class Node:
@@ -98,8 +95,7 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, disassembly, max_depth=MAX_DEPTH, branch_at_jumpi = False, dynamic_loader_cb = None):
-        self.disassembly = disassembly
+    def __init__(self, disassembly, libs_preload = [], max_depth=MAX_DEPTH, branch_at_jumpi = False, dynamic_loader_cb = None):
         self.nodes = {}
         self.addr_visited = []
         self.edges = []
@@ -121,10 +117,16 @@ class SVM:
         self.env['origin'] = BitVec("origin", 256)
         self.env['address_to'] = BitVec("address_to", 256) 
 
+        self.modules = {'MAIN': Module(disassembly)}
+
+        for lib in libs_preload:
+            self.modules[lib['name']] = Module(lib.disassembly)
+
         if (dynamic_loader_cb is not None):
-            self.load_libs = True
+            self.dynload = True
         else:
-            self.load_libs = False
+            self.dynload = False
+
 
 
     def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
@@ -166,7 +168,7 @@ class SVM:
 
         logging.debug("Starting SVM execution")
 
-        self.nodes[0] = self._sym_exec(State(), 0)
+        self.nodes[0] = self._sym_exec('MAIN', State(), 0)
 
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges")
 
@@ -181,9 +183,11 @@ class SVM:
             self.paths[key] = paths
 
 
-    def _sym_exec(self, state, depth):
-    
-        start_addr = self.disassembly.instruction_list[state.pc]['address']
+    def _sym_exec(self, module_key, state, depth):
+
+        this_module = self.modules[module_key]
+
+        start_addr = this_module.disassembly.instruction_list[state.pc]['address']
         node = Node(start_addr)
 
         logging.debug("- Entering new block, index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
@@ -193,17 +197,17 @@ class SVM:
             self.function_state['current_func_addr'] = start_addr
             self.function_state['sstore_called'] = False            
 
-        if start_addr in self.disassembly.addr_to_func:
+        if start_addr in this_module.disassembly.addr_to_func:
             # Start of a function
 
-            function_name = self.disassembly.addr_to_func[start_addr]
+            function_name = this_module.disassembly.addr_to_func[start_addr]
 
             self.function_state['current_func'] = function_name
             self.function_state['sstore_called'] = False
 
             logging.info("- Entering function " + function_name)
 
-            node.instruction_list.append({'opcode': function_name, 'address': self.disassembly.instruction_list[state.pc]['address']})
+            node.instruction_list.append({'opcode': function_name, 'address': this_module.disassembly.instruction_list[state.pc]['address']})
 
             state.pc += 1
 
@@ -211,7 +215,7 @@ class SVM:
 
         while not halt:
 
-            instr = self.disassembly.instruction_list[state.pc]
+            instr = this_module.disassembly.instruction_list[state.pc]
             node.instruction_list.append(instr)
 
             op = instr['opcode']
@@ -421,7 +425,7 @@ class SVM:
                     state.stack.append(self.env['caller'])
 
                 elif op == 'CODESIZE':
-                    state.stack.append(len(self.disassembly.instruction_list))
+                    state.stack.append(len(this_module.disassembly.instruction_list))
 
                 if op == 'SHA3':
                     s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
@@ -543,7 +547,7 @@ class SVM:
                     jump_addr = state.stack.pop()
 
                     if (type(jump_addr) == BitVecRef):
-                        logging.debug("Invalid jump argument: JUMP <bitvector> at " + str(self.disassembly.instruction_list[state.pc]['address']))
+                        logging.debug("Invalid jump argument: JUMP <bitvector> at " + str(this_module.disassembly.instruction_list[state.pc]['address']))
 
                         return node
 
@@ -553,16 +557,16 @@ class SVM:
 
                         logging.debug("JUMP to " + str(jump_addr))
 
-                        i = utils.get_instruction_index(self.disassembly.instruction_list, jump_addr)
+                        i = utils.get_instruction_index(this_module.disassembly.instruction_list, jump_addr)
 
-                        if self.disassembly.instruction_list[i]['opcode'] == "JUMPDEST":
+                        if this_module.disassembly.instruction_list[i]['opcode'] == "JUMPDEST":
                             logging.debug("Current nodes: " + str(self.nodes))
 
                             if jump_addr not in self.addr_visited:
                                 self.addr_visited.append(jump_addr)
                                 new_state = copy.deepcopy(state)
                                 new_state.pc = i
-                                new_node = self._sym_exec(new_state, depth + 1)
+                                new_node = self._sym_exec(module_key, new_state, depth + 1)
                                 self.nodes[jump_addr] = new_node
 
                             self.edges.append(Edge(node.start_addr, jump_addr, JumpType.UNCONDITIONAL))
@@ -576,14 +580,14 @@ class SVM:
 
                     if (depth < self.max_depth):
 
-                        i = utils.get_instruction_index(self.disassembly.instruction_list, jump_addr)
+                        i = utils.get_instruction_index(this_module.disassembly.instruction_list, jump_addr)
 
                         logging.debug("JUMPI to " + str(jump_addr))
 
                         if not i:
                             logging.debug("Invalid jump destination: " + str(jump_addr))
                         else:
-                            instr = self.disassembly.instruction_list[i]
+                            instr = this_module.disassembly.instruction_list[i]
 
                             # Add new node for condition == True
 
@@ -598,10 +602,10 @@ class SVM:
 
                                     new_state.pc = i
 
-                                    new_node = self._sym_exec(new_state, depth + 1)
+                                    new_node = self._sym_exec(module_key, new_state, depth + 1)
                                     self.nodes[jump_addr] = new_node
 
-                                logging.debug("Adding edge with condition: " + str(condition))
+                                logging.debug("Adding edge with constraint: " + str(condition))
 
                                 self.edges.append(Edge(node.start_addr, jump_addr, JumpType.CONDITIONAL, condition))
 
@@ -613,7 +617,7 @@ class SVM:
 
                                 new_node = self._sym_exec(new_state, depth)
 
-                                start_addr = self.disassembly.instruction_list[state.pc]['address']
+                                start_addr = this_module.disassembly.instruction_list[state.pc]['address']
                                 self.nodes[start_addr] = new_node
 
                                 if (type(condition) == BoolRef):
@@ -668,11 +672,11 @@ class SVM:
                             logging.info("Possible reentrancy at " + self.function_state['current_func'])
                             self.reentrancy_funcs.append(self.function_state['current_func_addr'])
 
-                    if (self.load_libs):
+                    if (self.dynload):
                         code = dynamic_loader_cb(str(to))
                         debug.info("Code returned by dynamic loader:" + code)
 
-                    ret = BitVec("retval_" + str(self.disassembly.instruction_list[state.pc]['address']) + "_" + str(randint(0, 1000)), 256)
+                    ret = BitVec("retval_" + str(this_module.disassembly.instruction_list[state.pc]['address']) + "_" + str(randint(0, 1000)), 256)
 
                     state.stack.append(ret)
 
