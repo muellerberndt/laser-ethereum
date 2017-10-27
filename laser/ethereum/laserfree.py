@@ -2,9 +2,9 @@ from . import svm
 from .modules import unchecked_send, unchecked_suicide
 import logging
 
-def fire(disassembly):
+def fire(modules):
 
-    _svm = svm.SVM(disassembly,  branch_at_jumpi = True)
+    _svm = svm.SVM(modules,  branch_at_jumpi = True)
 
     logging.info("Firing lasers!")
 
