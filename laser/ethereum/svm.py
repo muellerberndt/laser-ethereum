@@ -494,10 +494,10 @@ class SVM:
                     index = k.hexdigest()[:8]
 
                 try:
-                    data = self.storage[index]
+                    data = context.storage[index]
                 except KeyError:
                     data = BitVec("storage_" + str(index), 256)
-                    self.storage[index] = data
+                    context.storage[index] = data
 
                 state.stack.append(data)
 
@@ -515,7 +515,7 @@ class SVM:
                     k.update(bytes(str(index), 'utf-8'))
                     index = k.hexdigest()[:8]
 
-                    self.storage[index] = value
+                    context.storage[index] = value
                 else:
                     index = str(index)
 
@@ -525,9 +525,9 @@ class SVM:
                     self.sstor_node_lists[index] = [start_addr]
 
                 try:
-                    self.storage[index]
+                    context.storage[index]
                 except KeyError:
-                    self.storage[index] = BitVec("storage_" + str(index), 256)
+                    context.storage[index] = BitVec("storage_" + str(index), 256)
 
             elif op == 'JUMP':
 
