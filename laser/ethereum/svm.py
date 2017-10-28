@@ -654,6 +654,22 @@ class SVM:
                         logging.info("Possible reentrancy at " + self.function_state['current_func'])
                         self.reentrancy_funcs.append(self.function_state['current_func_addr'])
 
+                call_target = simplify(to)
+
+                if type(call_target) == BitVecNumRef:
+                    target = hex(call_target.as_long())
+
+                logging.info("CALL to: " + target)
+
+                # try:
+
+                #    callee_context = Context(self.modules[target], {}, caller = context.address_to)
+                #    self.nodes[10000] = self._sym_exec(callee_context, State(), 0)
+
+                #except KeyError:
+
+                #    logging.info("Code not loaded")
+
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']) + "_" + str(randint(0, 1000)), 256)
 
                 state.stack.append(ret)

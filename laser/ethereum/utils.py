@@ -40,6 +40,7 @@ def get_trace_line(instr, state):
 
 	return str(instr['address']) + " " + instr['opcode'] + "\tSTACK: " + stack
 
+
 def pop_bitvec(state):
     # pop one element from stack, converting boolean expression to bitvector
 
