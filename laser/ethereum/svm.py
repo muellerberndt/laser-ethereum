@@ -25,15 +25,25 @@ class JumpType(Enum):
 
 class State(): 
 
-    def __init__(self):
+    def __init__(self, gas = 1000000):
         self.storage = {}
-        self.memory = {}
+        self.memory = []
         self.stack = []
+        self.gas = gas
         self.pc = 0
 
-    def calldata_alloc(self, offset):
-        data = BitVec("calldata_" + str(offset), 256)
-        return data
+
+    def mem_extend(self, start, sz):
+
+        if sz and start + sz > len(self.memory):
+
+            n_append = start + sz - len(self.memory)
+
+            while n_append > 0:
+                self.memory.append(0)
+                n_append -= 1
+
+            # Deduct gas.. not yet implemented
 
 
 class Context(): 
@@ -41,7 +51,7 @@ class Context():
     def __init__(
         self,
         module,
-        calldata = BitVec("calldata", 256),
+        calldata = [],
         callvalue = BitVec("callvalue", 256),
         caller = BitVec("caller", 256),
         origin = BitVec("origin", 256),
@@ -56,9 +66,11 @@ class Context():
         self.address_to = address_to
 
 
+
 class Node:
 
-    def __init__(self, start_addr=0):
+    def __init__(self, module_name, start_addr=0):
+        self.module_name = module_name
         self.start_addr = start_addr
         self.instruction_list = []
 
@@ -76,7 +88,7 @@ class Node:
 
             code += "\\n"
 
-        return {'id': self.start_addr, 'code': code}
+        return {'id': self.module_name + ":" + str(self.start_addr), 'code': code}
 
 
 class Edge:
@@ -174,7 +186,7 @@ class SVM:
         disassembly = context.module['disassembly']
 
         start_addr = disassembly.instruction_list[state.pc]['address']
-        node = Node(start_addr)
+        node = Node(context.module['name'], start_addr)
 
         logging.debug("- Entering new block, index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
@@ -215,15 +227,23 @@ class SVM:
             # stack ops
             
             if op.startswith("PUSH"):
-                value = BitVecVal(int(instr['argument'][2:], 16), 256)
+                value = int(instr['argument'][2:], 16)
+                # value = BitVecVal(int(instr['argument'][2:], 16), 256)
                 state.stack.append(value)
 
             elif op.startswith('DUP'):
                 depth = int(op[3:])
+
+                logging.info("DUP " + str(type(state.stack[-depth])))
+
                 state.stack.append(state.stack[-depth])
 
             elif op.startswith('SWAP'):
                 depth = int(op[4:])
+
+                logging.info("SWAP " + str(type(state.stack[-depth - 1])))
+                logging.info("SWAP " + str(type(state.stack[-1])))
+
                 temp = state.stack[-depth - 1]
                 state.stack[-depth - 1] = state.stack[-1]
                 state.stack[-1] = temp
@@ -234,7 +254,7 @@ class SVM:
             # Bitwise ops
 
             elif op == 'AND':
-                op1 = state.stack.pop() 
+                op1 = state.stack.pop()
                 op2 = state.stack.pop()
 
                 state.stack.append(op1 & op2)
@@ -267,10 +287,23 @@ class SVM:
 
             # Arithmetics
 
-            elif op == "ADD":
-                state.stack.append((utils.pop_bitvec(state) + utils.pop_bitvec(state)))
+            elif op == 'ADD':
 
-            elif op == "SUB":
+                op1 = utils.pop_bitvec(state)
+                op2 = utils.pop_bitvec(state)
+
+                logging.info("ADD:")
+                logging.info(str(type(op1)))
+                logging.info(str(type(op2)))
+
+                ret = op1 + op2
+                
+                logging.info("RET " + str(type(ret)))
+
+                state.stack.append(ret)
+                # state.stack.append((utils.pop_bitvec(state) + utils.pop_bitvec(state)))
+
+            elif op == 'SUB':
                 state.stack.append((utils.pop_bitvec(state) - utils.pop_bitvec(state)))
 
             elif op == 'MUL':
@@ -278,7 +311,11 @@ class SVM:
 
             elif op == 'DIV':
                 s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
-                state.stack.append(UDiv(s0, s1))
+
+                if(type(s0) == int and type(s1) == int):
+                    state.stack.append(int(s0 / s1))
+                else:
+                    state.stack.append(UDiv(s0, s1))
 
             elif op == 'MOD':
                 s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
@@ -381,7 +418,21 @@ class SVM:
 
             elif op == 'CALLDATALOAD':
                 offset = state.stack.pop()
-                state.stack.append(state.calldata_alloc(offset))
+
+                if (type(offset) == BitVecNumRef):
+                    offset = offset.as_long()
+
+                print(str(type(offset)))
+                print(str(offset))
+
+                logging.info("CALLDATALOAD at offset " + str(offset))
+
+                try:
+                    state.stack.append(context.calldata[offset])
+                except IndexError:
+                    logging.info("Non-existent calldata offset")
+                    state.stack.append(BitVec("calldata_" + str(offset), 256))                   
+                                       
 
             elif op == 'CALLDATASIZE':
                 state.stack.append(BitVec("calldatasize", 256))
@@ -414,6 +465,9 @@ class SVM:
 
             if op == 'SHA3':
                 s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
+
+                if(type(s0) == BitVecNumRef):
+                    s0 = s0.as_long()
 
                 mem = state.memory[s0]
 
@@ -458,11 +512,18 @@ class SVM:
             elif op == 'MLOAD':
                 offset = state.stack.pop()
 
-                try:
-                    data = state.memory[offset]
+                # try:
+                
+                if (type(offset) == BitVecNumRef):
+                    offset = offset.as_long()
+
+                data = state.memory[offset]
+                
+                '''
                 except KeyError:
                     state.memory[offset] = BitVec("mem_" + str(offset), 256)
                     data = state.memory[offset]
+                '''
 
                 logging.debug("Load from memory[" + str(offset) + "]: " + str(data))
 
@@ -471,12 +532,19 @@ class SVM:
             elif op == 'MSTORE':
                 offset, value = state.stack.pop(), state.stack.pop()
 
+                if (type(offset) == BitVecNumRef):
+                    offset = offset.as_long()
+
+                state.mem_extend(offset, 1)
+
                 logging.debug("Store to memory[" + str(offset) + "]: " + str(value))
 
                 state.memory[offset] = value
 
             elif op == 'MSTORE8':
                 offset, value = state.stack.pop(), state.stack.pop()
+
+                mem_extend(offset, 1)
 
                 state.memory[offset] = value % 256
 
@@ -538,8 +606,6 @@ class SVM:
 
                 if (depth < self.max_depth):
 
-                    jump_addr = jump_addr.as_long()
-
                     logging.debug("JUMP to " + str(jump_addr))
 
                     i = utils.get_instruction_index(disassembly.instruction_list, jump_addr)
@@ -554,14 +620,14 @@ class SVM:
                             new_node = self._sym_exec(context, new_state, depth + 1)
                             self.nodes[jump_addr] = new_node
 
-                        self.edges.append(Edge(node.start_addr, jump_addr, JumpType.UNCONDITIONAL))
+                        self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(jump_addr), JumpType.UNCONDITIONAL))
                     else:
                         self.trace += "Skipping invalid jump destination"
 
                 return node
 
             elif op == 'JUMPI':
-                jump_addr, condition = state.stack.pop().as_long(), state.stack.pop()
+                jump_addr, condition = state.stack.pop(), state.stack.pop()
 
                 if (depth < self.max_depth):
 
@@ -592,7 +658,7 @@ class SVM:
 
                             logging.debug("Adding edge with condition: " + str(condition))
 
-                            self.edges.append(Edge(node.start_addr, jump_addr, JumpType.CONDITIONAL, condition))
+                            self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(jump_addr), JumpType.CONDITIONAL, condition))
 
                         if (self.branch_at_jumpi):
 
@@ -606,9 +672,9 @@ class SVM:
                             self.nodes[start_addr] = new_node
 
                             if (type(condition) == BoolRef):
-                                self.edges.append(Edge(node.start_addr, start_addr, JumpType.CONDITIONAL, Not(condition)))
+                                self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(start_addr), JumpType.CONDITIONAL, Not(condition)))
                             else:
-                                self.edges.append(Edge(node.start_addr, start_addr, JumpType.CONDITIONAL, condition == 0))                               
+                                self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(start_addr), JumpType.CONDITIONAL, condition == 0))                               
 
                             return node
 
@@ -652,22 +718,20 @@ class SVM:
                         logging.info("Possible reentrancy at " + self.function_state['current_func'])
                         self.reentrancy_funcs.append(self.function_state['current_func_addr'])
 
-                call_target = simplify(to)
+                logging.info("CALL to: " + hex(to))
 
-                if type(call_target) == BitVecNumRef:
-                    target = hex(call_target.as_long())
+                calldata = state.memory[meminstart:meminstart+meminsz]
 
-                logging.info("CALL to: " + target)
-                logging.info("calldata: " + str(state.memory[meminstart]))        
+                logging.info("calldata: " + str(calldata))        
 
                 try:
 
-                    callee_context = Context(self.modules[target], calldata = state.memory[meminstart], caller = context.address_to, origin = context.origin)
+                    callee_context = Context(self.modules[hex(to)], calldata = calldata, caller = context.address_to, origin = context.origin)
                     self.nodes[10000] = self._sym_exec(callee_context, State(), 0)
 
                 except KeyError:
 
-                    logging.info("No contract mapping at " + target)
+                    logging.info("No contract mapping at " + hex(to))
 
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']) + "_" + str(randint(0, 1000)), 256)
 
