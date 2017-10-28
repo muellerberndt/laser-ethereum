@@ -26,8 +26,7 @@ class JumpType(Enum):
 class State(): 
 
     def __init__(self):
-
-        self.calldata = {}
+        self.storage = {}
         self.memory = {}
         self.stack = []
         self.pc = 0
@@ -42,7 +41,7 @@ class Context():
     def __init__(
         self,
         module,
-        storage = {},
+        calldata = BitVec("calldata", 256),
         callvalue = BitVec("callvalue", 256),
         caller = BitVec("caller", 256),
         origin = BitVec("origin", 256),
@@ -50,7 +49,7 @@ class Context():
         ):
 
         self.module = module
-        self.storage = storage
+        self.calldata = calldata
         self.callvalue = callvalue
         self.caller = caller
         self.origin = origin
@@ -141,7 +140,6 @@ class SVM:
 
 
     def find_paths(self, node_to):
-
         paths = []
         nodes_visited = []
 
@@ -154,7 +152,7 @@ class SVM:
 
         logging.debug("Starting SVM execution")
 
-        context = Context(self.modules[0])
+        context = Context(self.modules["0x0000000000000000000000000000000000000000"])
 
         self.nodes[0] = self._sym_exec(context, State(), 0)
 
@@ -494,10 +492,10 @@ class SVM:
                     index = k.hexdigest()[:8]
 
                 try:
-                    data = context.storage[index]
+                    data = state.storage[index]
                 except KeyError:
                     data = BitVec("storage_" + str(index), 256)
-                    context.storage[index] = data
+                    state.storage[index] = data
 
                 state.stack.append(data)
 
@@ -515,7 +513,7 @@ class SVM:
                     k.update(bytes(str(index), 'utf-8'))
                     index = k.hexdigest()[:8]
 
-                    context.storage[index] = value
+                    state.storage[index] = value
                 else:
                     index = str(index)
 
@@ -525,9 +523,9 @@ class SVM:
                     self.sstor_node_lists[index] = [start_addr]
 
                 try:
-                    context.storage[index]
+                    state.storage[index]
                 except KeyError:
-                    context.storage[index] = BitVec("storage_" + str(index), 256)
+                    state.storage[index] = BitVec("storage_" + str(index), 256)
 
             elif op == 'JUMP':
 
@@ -661,14 +659,16 @@ class SVM:
 
                 logging.info("CALL to: " + target)
 
-                # try:
+                try:
 
-                #    callee_context = Context(self.modules[target], {}, caller = context.address_to)
-                #    self.nodes[10000] = self._sym_exec(callee_context, State(), 0)
+                    calldata = state.memory
 
-                #except KeyError:
+                    callee_context = Context(self.modules[target], {}, caller = context.address_to)
+                    self.nodes[10000] = self._sym_exec(callee_context, State(), 0)
 
-                #    logging.info("Code not loaded")
+                except KeyError:
+
+                    logging.info("Code not loaded")
 
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']) + "_" + str(randint(0, 1000)), 256)
 
