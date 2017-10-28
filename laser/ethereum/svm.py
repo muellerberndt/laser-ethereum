@@ -624,12 +624,12 @@ class SVM:
 
             elif op.startswith('LOG'):
                 depth = int(op[3:])
-                mstart, msz = state.stack.pop(), state.stack.pop()
-                topics = [state.stack.pop() for x in range(depth)]
+                state.stack.pop(), state.stack.pop()
+                [state.stack.pop() for x in range(depth)]
                 # Not supported
 
             elif op == 'CREATE':
-                value, mstart, msz = state.stack.pop(), state.stack.pop(), state.stack.pop()
+                state.stack.pop(), state.stack.pop(), state.stack.pop()
                 # Not supported
                 state.stack.append(0)
 
@@ -658,17 +658,16 @@ class SVM:
                     target = hex(call_target.as_long())
 
                 logging.info("CALL to: " + target)
+                logging.info("calldata: " + str(state.memory[meminstart]))        
 
                 try:
 
-                    calldata = state.memory
-
-                    callee_context = Context(self.modules[target], {}, caller = context.address_to)
+                    callee_context = Context(self.modules[target], calldata = state.memory[meminstart], caller = context.address_to, origin = context.origin)
                     self.nodes[10000] = self._sym_exec(callee_context, State(), 0)
 
                 except KeyError:
 
-                    logging.info("Code not loaded")
+                    logging.info("No contract mapping at " + target)
 
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']) + "_" + str(randint(0, 1000)), 256)
 
