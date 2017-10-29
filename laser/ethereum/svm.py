@@ -88,7 +88,7 @@ class Node:
 
             code += "\\n"
 
-        return {'id': self.module_name + ":" + str(self.start_addr), 'module_name': self.module_name, 'code': code}
+        return {'start_addr': self.start_addr, 'module_name': self.module_name, 'code': code}
 
 
 class Edge:
@@ -166,7 +166,7 @@ class SVM:
 
         context = Context(self.modules["0x0000000000000000000000000000000000000000"])
 
-        self.nodes[0] = self._sym_exec(context, State(), 0)
+        self.nodes[context.module['name'] + ":0"] = self._sym_exec(context, State(), 0)
 
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges")
 
@@ -227,23 +227,15 @@ class SVM:
             # stack ops
             
             if op.startswith("PUSH"):
-                # value = int(instr['argument'][2:], 16)
                 value = BitVecVal(int(instr['argument'][2:], 16), 256)
                 state.stack.append(value)
 
             elif op.startswith('DUP'):
                 depth = int(op[3:])
-
-                # logging.info("DUP " + str(type(state.stack[-depth])))
-
                 state.stack.append(state.stack[-depth])
 
             elif op.startswith('SWAP'):
                 depth = int(op[4:])
-
-                # logging.info("SWAP " + str(type(state.stack[-depth - 1])))
-                # logging.info("SWAP " + str(type(state.stack[-1])))
-
                 temp = state.stack[-depth - 1]
                 state.stack[-depth - 1] = state.stack[-1]
                 state.stack[-1] = temp
@@ -288,18 +280,6 @@ class SVM:
             # Arithmetics
 
             elif op == 'ADD':
-
-                # op1 = utils.pop_bitvec(state)
-                #op2 = utils.pop_bitvec(state)
-
-                # logging.info(str(type(op1)))
-                # logging.info(str(type(op2)))
-
-                #et = op1 + op2
-                
-                # logging.info("RET " + str(type(ret)))
-
-                # state.stack.append(ret)
                 state.stack.append((utils.pop_bitvec(state) + utils.pop_bitvec(state)))
 
             elif op == 'SUB':
@@ -311,10 +291,7 @@ class SVM:
             elif op == 'DIV':
                 s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
 
-                if(type(s0) == int and type(s1) == int):
-                    state.stack.append(int(s0 / s1))
-                else:
-                    state.stack.append(UDiv(s0, s1))
+                state.stack.append(UDiv(s0, s1))
 
             elif op == 'MOD':
                 s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
@@ -416,12 +393,8 @@ class SVM:
                 state.stack.append(context.callvalue)
 
             elif op == 'CALLDATALOAD':
-                offset = state.stack.pop()
+                offset = offset = utils.get_concrete_int(state.stack.pop())
 
-                if (type(offset) == BitVecNumRef):
-                    offset = offset.as_long()
-                if (type(offset) == BitVecRef):
-                    offset = simplify(offset).as_long()
                 try:
                     state.stack.append(context.calldata[offset])
                 except IndexError:
@@ -438,7 +411,17 @@ class SVM:
                     state.stack.append(BitVec("calldatasize", 256))
 
             elif op == 'CALLDATACOPY':
-                mstart, dstart, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
+                mstart = utils.get_concrete_int(state.stack.pop())
+                dstart = utils.get_concrete_int(state.stack.pop())
+                size = utils.get_concrete_int(state.stack.pop())
+
+                state.mem_extend(mstart, size)
+
+                i_data = dstart
+
+                for i in range(mstart, mstart + size):
+                    state.memory[i] = context.calldata[i_data]
+                    i_data += 1
 
             # Control flow
 
@@ -582,7 +565,7 @@ class SVM:
 
             elif op == 'JUMP':
 
-                jump_addr = state.stack.pop()
+                jump_addr = utils.get_concrete_int(state.stack.pop())
 
                 if (type(jump_addr) == BitVecRef):
                     logging.debug("Invalid jump argument: JUMP <bitvector> at " + str(disassembly.instruction_list[state.pc]['address']))
@@ -603,7 +586,7 @@ class SVM:
                             new_state = copy.deepcopy(state)
                             new_state.pc = i
                             new_node = self._sym_exec(context, new_state, depth + 1)
-                            self.nodes[jump_addr] = new_node
+                            self.nodes[context.module['name'] + ':' + str(jump_addr)] = new_node
 
                         self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(jump_addr), JumpType.UNCONDITIONAL))
                     else:
@@ -612,7 +595,8 @@ class SVM:
                 return node
 
             elif op == 'JUMPI':
-                jump_addr, condition = state.stack.pop(), state.stack.pop()
+                jump_addr = utils.get_concrete_int(state.stack.pop())
+                condition = state.stack.pop()
 
                 if (depth < self.max_depth):
 
@@ -639,7 +623,7 @@ class SVM:
                                 new_state.pc = i
 
                                 new_node = self._sym_exec(context, new_state, depth + 1)
-                                self.nodes[jump_addr] = new_node
+                                self.nodes[context.module['name'] + ':' + str(jump_addr)] = new_node
 
                             logging.debug("Adding edge with condition: " + str(condition))
 
@@ -654,7 +638,7 @@ class SVM:
                             new_node = self._sym_exec(context, new_state, depth)
 
                             start_addr = disassembly.instruction_list[state.pc]['address']
-                            self.nodes[start_addr] = new_node
+                            self.nodes[context.module['name'] + ':' + start_addr] = new_node
 
                             if (type(condition) == BoolRef):
                                 self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(start_addr), JumpType.CONDITIONAL, Not(condition)))
@@ -713,8 +697,10 @@ class SVM:
 
                 try:
 
-                    callee_context = Context(self.modules[callee_address], calldata = calldata, caller = context.address_to, origin = context.origin)
-                    self.nodes[10000] = self._sym_exec(callee_context, State(), 0)
+                    callee_module = self.modules[callee_address]
+
+                    callee_context = Context(callee_module, calldata = calldata, caller = context.address_to, origin = context.origin)
+                    self.nodes[callee_module['name'] + ':0'] = self._sym_exec(callee_context, State(), 0)
 
                 except KeyError:
 
