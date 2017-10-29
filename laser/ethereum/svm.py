@@ -727,10 +727,8 @@ class SVM:
                 return node
 
             elif op == 'REVERT':
-                # logging.debug("Returning from block " +  str(start_addr))
                 return node
 
             elif op == 'INVALID':
-                # logging.debug("Returning from block " +  str(start_addr))
                 return node
 
