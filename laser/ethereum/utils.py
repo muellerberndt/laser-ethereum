@@ -52,6 +52,18 @@ def pop_bitvec(state):
         return item
 
 
+def get_concrete_int(item):
+
+    if (type(item) == int):
+        return item
+
+    if (type(item) == BitVecNumRef):
+        return item.as_long()
+
+    if (type(item) == BitVecRef):
+        return simplify(item).as_long()
+
+
 def storage_constraints_for_path(svm, path):
 
     storage_constraints = []

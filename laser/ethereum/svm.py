@@ -88,7 +88,7 @@ class Node:
 
             code += "\\n"
 
-        return {'id': self.module_name + ":" + str(self.start_addr), 'code': code}
+        return {'id': self.module_name + ":" + str(self.start_addr), 'module_name': self.module_name, 'code': code}
 
 
 class Edge:
@@ -227,22 +227,22 @@ class SVM:
             # stack ops
             
             if op.startswith("PUSH"):
-                value = int(instr['argument'][2:], 16)
-                # value = BitVecVal(int(instr['argument'][2:], 16), 256)
+                # value = int(instr['argument'][2:], 16)
+                value = BitVecVal(int(instr['argument'][2:], 16), 256)
                 state.stack.append(value)
 
             elif op.startswith('DUP'):
                 depth = int(op[3:])
 
-                logging.info("DUP " + str(type(state.stack[-depth])))
+                # logging.info("DUP " + str(type(state.stack[-depth])))
 
                 state.stack.append(state.stack[-depth])
 
             elif op.startswith('SWAP'):
                 depth = int(op[4:])
 
-                logging.info("SWAP " + str(type(state.stack[-depth - 1])))
-                logging.info("SWAP " + str(type(state.stack[-1])))
+                # logging.info("SWAP " + str(type(state.stack[-depth - 1])))
+                # logging.info("SWAP " + str(type(state.stack[-1])))
 
                 temp = state.stack[-depth - 1]
                 state.stack[-depth - 1] = state.stack[-1]
@@ -289,19 +289,18 @@ class SVM:
 
             elif op == 'ADD':
 
-                op1 = utils.pop_bitvec(state)
-                op2 = utils.pop_bitvec(state)
+                # op1 = utils.pop_bitvec(state)
+                #op2 = utils.pop_bitvec(state)
 
-                logging.info("ADD:")
-                logging.info(str(type(op1)))
-                logging.info(str(type(op2)))
+                # logging.info(str(type(op1)))
+                # logging.info(str(type(op2)))
 
-                ret = op1 + op2
+                #et = op1 + op2
                 
-                logging.info("RET " + str(type(ret)))
+                # logging.info("RET " + str(type(ret)))
 
-                state.stack.append(ret)
-                # state.stack.append((utils.pop_bitvec(state) + utils.pop_bitvec(state)))
+                # state.stack.append(ret)
+                state.stack.append((utils.pop_bitvec(state) + utils.pop_bitvec(state)))
 
             elif op == 'SUB':
                 state.stack.append((utils.pop_bitvec(state) - utils.pop_bitvec(state)))
@@ -421,21 +420,22 @@ class SVM:
 
                 if (type(offset) == BitVecNumRef):
                     offset = offset.as_long()
-
-                print(str(type(offset)))
-                print(str(offset))
-
-                logging.info("CALLDATALOAD at offset " + str(offset))
-
+                if (type(offset) == BitVecRef):
+                    offset = simplify(offset).as_long()
                 try:
                     state.stack.append(context.calldata[offset])
                 except IndexError:
-                    logging.info("Non-existent calldata offset")
-                    state.stack.append(BitVec("calldata_" + str(offset), 256))                   
+                    logging.debug("Non-existent calldata offset, using symbolic variable instead")
+                    state.stack.append(BitVec("calldata_" + str(offset), 256))
                                        
-
             elif op == 'CALLDATASIZE':
-                state.stack.append(BitVec("calldatasize", 256))
+
+                calldatasize = len(context.calldata)
+
+                if (calldatasize > 0):
+                    state.stack.append(BitVecVal(calldatasize, 256))
+                else:
+                    state.stack.append(BitVec("calldatasize", 256))
 
             elif op == 'CALLDATACOPY':
                 mstart, dstart, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
@@ -511,29 +511,20 @@ class SVM:
 
             elif op == 'MLOAD':
                 offset = state.stack.pop()
-
-                # try:
                 
                 if (type(offset) == BitVecNumRef):
                     offset = offset.as_long()
 
                 data = state.memory[offset]
-                
-                '''
-                except KeyError:
-                    state.memory[offset] = BitVec("mem_" + str(offset), 256)
-                    data = state.memory[offset]
-                '''
-
+            
                 logging.debug("Load from memory[" + str(offset) + "]: " + str(data))
 
                 state.stack.append(data)
 
             elif op == 'MSTORE':
-                offset, value = state.stack.pop(), state.stack.pop()
+                offset = utils.get_concrete_int(state.stack.pop())
 
-                if (type(offset) == BitVecNumRef):
-                    offset = offset.as_long()
+                value = state.stack.pop()
 
                 state.mem_extend(offset, 1)
 
@@ -718,15 +709,16 @@ class SVM:
                         logging.info("Possible reentrancy at " + self.function_state['current_func'])
                         self.reentrancy_funcs.append(self.function_state['current_func_addr'])
 
-                logging.info("CALL to: " + hex(to))
+                callee_address = hex(utils.get_concrete_int(to))
+                logging.info("CALL to: " + callee_address)
 
-                calldata = state.memory[meminstart:meminstart+meminsz]
+                calldata = state.memory[utils.get_concrete_int(meminstart):utils.get_concrete_int(meminstart+meminsz)]
 
                 logging.info("calldata: " + str(calldata))        
 
                 try:
 
-                    callee_context = Context(self.modules[hex(to)], calldata = calldata, caller = context.address_to, origin = context.origin)
+                    callee_context = Context(self.modules[callee_address], calldata = calldata, caller = context.address_to, origin = context.origin)
                     self.nodes[10000] = self._sym_exec(callee_context, State(), 0)
 
                 except KeyError:
