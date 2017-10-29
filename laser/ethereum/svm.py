@@ -510,11 +510,7 @@ class SVM:
                 state.stack.append(BitVec("block_gaslimit", 256))
 
             elif op == 'MLOAD':
-                offset = state.stack.pop()
-                
-                if (type(offset) == BitVecNumRef):
-                    offset = offset.as_long()
-
+                offset = utils.get_concrete_int(state.stack.pop())
                 data = state.memory[offset]
             
                 logging.debug("Load from memory[" + str(offset) + "]: " + str(data))
@@ -523,9 +519,7 @@ class SVM:
 
             elif op == 'MSTORE':
                 offset = utils.get_concrete_int(state.stack.pop())
-
                 value = state.stack.pop()
-
                 state.mem_extend(offset, 1)
 
                 logging.debug("Store to memory[" + str(offset) + "]: " + str(value))
@@ -710,6 +704,7 @@ class SVM:
                         self.reentrancy_funcs.append(self.function_state['current_func_addr'])
 
                 callee_address = hex(utils.get_concrete_int(to))
+
                 logging.info("CALL to: " + callee_address)
 
                 calldata = state.memory[utils.get_concrete_int(meminstart):utils.get_concrete_int(meminstart+meminsz)]
