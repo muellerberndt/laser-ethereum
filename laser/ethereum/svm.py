@@ -3,7 +3,6 @@ from laser.ethereum import utils
 from z3 import *
 import copy
 import logging
-from random import randint
 import sha3
 
 
@@ -119,10 +118,6 @@ class SVM:
         self.addr_visited = []
         self.edges = []
         self.paths = {}
-        self.send_eth_locs = []
-        self.suicide_locs = []
-        self.reentrancy_funcs = []
-        self.sstor_node_lists = {}
         self.function_state = {}
         self.trace = ""
         self.max_depth = max_depth
@@ -195,7 +190,6 @@ class SVM:
         if start_addr == 0:
             self.function_state['current_func'] = "prologue"
             self.function_state['current_func_addr'] = start_addr
-            self.function_state['sstore_called'] = False            
 
         if start_addr in disassembly.addr_to_func:
             # Start of a function
@@ -203,7 +197,6 @@ class SVM:
             function_name = disassembly.addr_to_func[start_addr]
 
             self.function_state['current_func'] = function_name
-            self.function_state['sstore_called'] = False
 
             logging.info("- Entering function " + function_name)
 
@@ -561,8 +554,6 @@ class SVM:
             elif op == 'SSTORE':
                 index, value = state.stack.pop(), state.stack.pop()
 
-                self.function_state['sstore_called'] = True
-
                 logging.debug("Write to storage[" + str(index) + "] at node " + str(start_addr))
 
                 if type(index) == BitVecRef:
@@ -575,11 +566,6 @@ class SVM:
                     state.storage[index] = value
                 else:
                     index = str(index)
-
-                try:
-                    self.sstor_node_lists[index].append(start_addr)
-                except KeyError:
-                    self.sstor_node_lists[index] = [start_addr]
 
                 try:
                     state.storage[index]
@@ -694,20 +680,9 @@ class SVM:
                 # Not supported
                 state.stack.append(0)
 
-            elif op == 'CALL':
+            elif op == 'CALL' or op == 'CALLCODE' or op == 'DELEGATECALL':
                 gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
                 state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
-
-                send_eth = False
-
-                if (type(value) is not BitVecNumRef):
-                    send_eth = True
-                elif value.as_long() > 0:
-                    send_eth = True
-
-                if (send_eth):
-                    logging.debug("CALL with non-zero value: " + str(value))
-                    self.send_eth_locs.append({'address': start_addr, 'function_name': self.function_state['current_func']})
 
                 try:
                     callee_address = hex(utils.get_concrete_int(to))
@@ -761,12 +736,6 @@ class SVM:
                 self.nodes[context.module['name'] + ':' + str(start_addr)] = new_node
 
                 return node
-
-            elif op == 'CALLCODE':
-                gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
-                state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
-                # Not supported          
-                state.stack.append(BitVecVal(0, 256))
 
             elif op == 'RETURN':
                 offset, length = state.stack.pop(), state.stack.pop()
