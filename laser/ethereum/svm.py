@@ -757,7 +757,6 @@ class SVM:
                 return node
 
             elif op == 'SUICIDE':
-                self.suicide_locs.append({'address': start_addr, 'function_name': self.function_state['current_func']})
                 return node
 
             elif op == 'REVERT':
