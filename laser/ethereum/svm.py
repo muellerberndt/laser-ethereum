@@ -708,25 +708,48 @@ class SVM:
 
                 try:
                     callee_address = hex(utils.get_concrete_int(to))
+                    module = self.modules[callee_address]
                 except AttributeError:
                     logging.info("Unable to get concrete call address.")
                     if self.dynamic_loader is not None:
 
                         logging.info("Contract not loaded, attempting to resolve dependency")
-                        module =  self.dynamic_loader.dynld(context.module['address'], str(simplify(to)))
+                        module = self.dynamic_loader.dynld(context.module['address'], str(simplify(to)))
 
                         if module is None:
 
                             logging.info("No contract code returned, not a contract account?")
+                            ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                            state.stack.append(ret)
+
                             continue
 
                     else:
                         logging.info("Contract not loaded and dynamic loader unavailable. Skipping call")
-
                         ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                         state.stack.append(ret)
 
                         continue
+                except KeyError:
+                    logging.info("Module with address " + callee_address + " not loaded.")
+
+                    if self.dynamic_loader is not None:
+
+                        module = self.dynamic_loader.dynld(context.module['address'], callee_address)
+
+                        logging.info("Attempting to load dependency")
+                        if module is None:
+
+                            logging.info("No contract code returned, not a contract account?")
+                            ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                            state.stack.append(ret)
+                            continue
+
+                    else:
+                         logging.info("Dynamic loader unavailable. Skipping call")
+                         ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                         state.stack.append(ret)     
+                         continue  
 
 
                 callee_address = module['address']
