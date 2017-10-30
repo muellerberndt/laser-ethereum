@@ -113,7 +113,7 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, max_depth=MAX_DEPTH, simplify_model = True):
+    def __init__(self, modules, max_depth=MAX_DEPTH, simplify_model = True, dynamic_loader_cb = None):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = []
@@ -126,6 +126,7 @@ class SVM:
         self.last_caller = ""
         self.total_states = 0
         self.active_node_prefix = ""
+        self.dynamic_loader_cb = dynamic_loader_cb
 
 
     def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
@@ -698,15 +699,22 @@ class SVM:
                 gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
                 state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
 
+                logging.info(op + " to " + str(to))
+
                 try:
                     callee_address = hex(utils.get_concrete_int(to))
                 except AttributeError:
-                    logging.debug("Unable to get concrete call address.")
+                    logging.info("Unable to get concrete call address.")
+                    if self.dynamic_loader_cb is not None:
+                        logging.info("Contract not loaded, attempting to resolve dependency")
+                        self.dynamic_loader_cb(self, str(simplify(callee_address)))
+                    else:
+                        logging.info("Contract not loaded and dynamic loader unavailable. Skipping call")
 
-                    ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
-                    state.stack.append(ret)
+                        ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                        state.stack.append(ret)
 
-                    continue
+                        continue
 
                 logging.info(op + " to: " + callee_address)
 
