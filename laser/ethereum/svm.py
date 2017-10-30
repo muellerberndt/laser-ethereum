@@ -113,7 +113,7 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, max_depth=MAX_DEPTH, simplify_model = True, dynamic_loader_cb = None):
+    def __init__(self, modules, max_depth=MAX_DEPTH, simplify_model=True, dynamic_loader=None):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = []
@@ -126,7 +126,7 @@ class SVM:
         self.last_caller = ""
         self.total_states = 0
         self.active_node_prefix = ""
-        self.dynamic_loader_cb = dynamic_loader_cb
+        self.dynamic_loader = dynamic_loader
 
 
     def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
@@ -199,7 +199,7 @@ class SVM:
         start_addr = disassembly.instruction_list[state.pc]['address']
         node = Node(context.module['name'], start_addr)
 
-        logging.debug("- Entering new block, index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
+        logging.debug("- Entering block " + self.active_node_prefix + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
         if start_addr == 0:
             self.function_state['current_func'] = "prologue"
@@ -705,9 +705,16 @@ class SVM:
                     callee_address = hex(utils.get_concrete_int(to))
                 except AttributeError:
                     logging.info("Unable to get concrete call address.")
-                    if self.dynamic_loader_cb is not None:
+                    if self.dynamic_loader is not None:
+
                         logging.info("Contract not loaded, attempting to resolve dependency")
-                        self.dynamic_loader_cb(self, str(simplify(callee_address)))
+                        module =  self.dynamic_loader.dynld(context.module['address'], str(simplify(to)))
+
+                        if module is None:
+
+                            logging.info("No contract code returned, not a contract account?")
+                            continue
+
                     else:
                         logging.info("Contract not loaded and dynamic loader unavailable. Skipping call")
 
@@ -716,12 +723,16 @@ class SVM:
 
                         continue
 
+
+                callee_address = module['address']
+                self.modules[callee_address] = module    
                 logging.info(op + " to: " + callee_address)
 
                 try:
                     callee_module = self.modules[callee_address]
                 except KeyError:
-                    logging.debug("Contract " + str(callee_address) + "not loaded.")
+                    logging.info("Contract " + str(callee_address) + " not loaded.")
+                    logging.info((str(self.modules)))
                     
                     ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                     state.stack.append(ret)
@@ -782,7 +793,7 @@ class SVM:
                 memoutsz = utils.get_concrete_int(memoutsz)
 
                 new_state.mem_extend(memoutstart, memoutsz)
-                new_state.memory[memoutstart:memoutstart + memoutsz] = self.last_returned
+                # new_state.memory[memoutstart:memoutstart + memoutsz] = self.last_returned
 
                 new_node = self._sym_exec(context, new_state, depth)
 
