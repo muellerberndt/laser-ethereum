@@ -75,6 +75,7 @@ class Node:
         self.module_name = module_name
         self.start_addr = start_addr
         self.instruction_list = []
+        self.states = {}
 
     def __str__(self):
         return str(self.as_dict())
@@ -123,6 +124,7 @@ class SVM:
         self.max_depth = max_depth
         self.simplify_model = simplify_model
         self.last_caller = ""
+        self.total_states = 0
 
 
     def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
@@ -165,6 +167,8 @@ class SVM:
 
         context = Context(self.modules[main_address])
         self.nodes[context.module['name'] + ":0"] = self._sym_exec(context, State(), 0)
+
+        logging.info("Execution complete, saved " + str(self.total_states) + " states")
 
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges")
         logging.info("Resolving paths")
@@ -212,6 +216,8 @@ class SVM:
 
             instr = disassembly.instruction_list[state.pc]
             node.instruction_list.append(instr)
+            node.states[disassembly.instruction_list[state.pc]['address']] = state
+            self.total_states += 1
 
             op = instr['opcode']
 
