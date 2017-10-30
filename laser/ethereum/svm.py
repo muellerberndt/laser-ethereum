@@ -34,6 +34,11 @@ class State():
         self.gas = gas
         self.pc = 0
 
+    def as_dict(self):
+
+        return {'memory': self.memory, 'stack': self.stack, 'storage': self.storage, 'pc': self.pc, 'gas': self.gas}
+
+
 
     def mem_extend(self, start, sz):
 
@@ -91,7 +96,7 @@ class Node:
 
             code += "\\n"
 
-        return {'start_addr': self.start_addr, 'module_name': self.module_name, 'code': code}
+        return {'module_name': self.module_name, 'code': code, 'start_addr': self.start_addr, 'instruction_list': self.instruction_list, 'states': self.states}
 
 
 class Edge:
@@ -665,7 +670,7 @@ class SVM:
                             new_node = self._sym_exec(context, new_state, depth)
 
                             start_addr = disassembly.instruction_list[state.pc]['address']
-                            self.nodes[self.active_node_prefix + ':' + start_addr] = new_node
+                            self.nodes[self.active_node_prefix + ':' + str(start_addr)] = new_node
 
                             if (type(condition) == BoolRef):
                                 self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.active_node_prefix + ":" + str(start_addr), JumpType.CONDITIONAL, Not(condition)))
