@@ -21,6 +21,8 @@ class SVMError(Exception):
 class JumpType(Enum):
     CONDITIONAL = 1
     UNCONDITIONAL = 2
+    CALL = 3
+    RETURN = 4
 
 
 class State(): 
@@ -29,6 +31,7 @@ class State():
         self.storage = {}
         self.memory = []
         self.stack = []
+        self.last_returned = []
         self.gas = gas
         self.pc = 0
 
@@ -110,7 +113,7 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, max_depth=MAX_DEPTH, branch_at_jumpi = False):
+    def __init__(self, modules, max_depth=MAX_DEPTH, split_all_states = False):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = []
@@ -123,7 +126,8 @@ class SVM:
         self.function_state = {}
         self.trace = ""
         self.max_depth = max_depth
-        self.branch_at_jumpi = branch_at_jumpi
+        self.split_all_states = split_all_states
+        self.last_caller = ""
 
 
     def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
@@ -160,16 +164,14 @@ class SVM:
         return paths
 
 
-    def sym_exec(self):
+    def sym_exec(self, main_address):
 
         logging.debug("Starting SVM execution")
 
-        context = Context(self.modules["0x0000000000000000000000000000000000000000"])
-
+        context = Context(self.modules[main_address])
         self.nodes[context.module['name'] + ":0"] = self._sym_exec(context, State(), 0)
 
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges")
-
         logging.info("Resolving paths")
 
         for key in self.nodes:
@@ -393,10 +395,12 @@ class SVM:
                 state.stack.append(context.callvalue)
 
             elif op == 'CALLDATALOAD':
-                offset = offset = utils.get_concrete_int(state.stack.pop())
-
                 try:
+                    offset = utils.get_concrete_int(state.stack.pop())
                     state.stack.append(context.calldata[offset])
+                except AttributeError:
+                    logging.debug("CALLDATALOAD: Unsupported symbolic index at " + str(disassembly.instruction_list[state.pc]['address']))
+                    state.stack.append(BitVec("calldata_" + str(offset), 256))
                 except IndexError:
                     logging.debug("Non-existent calldata offset, using symbolic variable instead")
                     state.stack.append(BitVec("calldata_" + str(offset), 256))
@@ -411,17 +415,19 @@ class SVM:
                     state.stack.append(BitVec("calldatasize", 256))
 
             elif op == 'CALLDATACOPY':
-                mstart = utils.get_concrete_int(state.stack.pop())
-                dstart = utils.get_concrete_int(state.stack.pop())
-                size = utils.get_concrete_int(state.stack.pop())
 
-                state.mem_extend(mstart, size)
+                pass
+                #mstart = utils.get_concrete_int(state.stack.pop())
+                #dstart = utils.get_concrete_int(state.stack.pop())
+                #size = utils.get_concrete_int(state.stack.pop())
 
-                i_data = dstart
+                #state.mem_extend(mstart, size)
 
-                for i in range(mstart, mstart + size):
-                    state.memory[i] = context.calldata[i_data]
-                    i_data += 1
+                # i_data = dstart
+
+                # for i in range(mstart, mstart + size):
+                #    state.memory[i] = context.calldata[i_data]
+                #    i_data += 1
 
             # Control flow
 
@@ -449,14 +455,7 @@ class SVM:
             if op == 'SHA3':
                 s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
 
-                if(type(s0) == BitVecNumRef):
-                    s0 = s0.as_long()
-
-                mem = state.memory[s0]
-
-                # Don't actually calculate the hash
-
-                state.stack.append(BitVec("SHA3(" + str(simplify(mem)) + ")", 256))
+                state.stack.append(BitVec("KECCAC_" + str(s0) + ")", 256))
 
             elif op == 'GASPRICE':
                 state.stack.append(0)
@@ -493,19 +492,38 @@ class SVM:
                 state.stack.append(BitVec("block_gaslimit", 256))
 
             elif op == 'MLOAD':
-                offset = utils.get_concrete_int(state.stack.pop())
-                data = state.memory[offset]
-            
-                logging.debug("Load from memory[" + str(offset) + "]: " + str(data))
+                
+                try:
+                    offset = utils.get_concrete_int(state.stack.pop())
+                except AttributeError:
+                    logging.debug("MLOAD from symbolic index. Not supported")
+                    data = BitVec("mem_" + str(offset), 256)
+                    continue
+
+                try:   
+                    data = state.memory[offset]
+                except IndexError: # Memory slot not yet allocated
+                    
+                    data = BitVec("mem_" + str(offset), 25)
+                    state.mem_extend(offset, 1)
+                    state.memory[offset] = data
+
+                logging.info("Load from memory[" + str(offset) + "]: " + str(data))
 
                 state.stack.append(data)
 
             elif op == 'MSTORE':
-                offset = utils.get_concrete_int(state.stack.pop())
+
+                try:
+                    offset = utils.get_concrete_int(state.stack.pop())
+                except AttributeError:
+                    logging.debug("MSTORE to symbolic index. Not supported")
+                    continue
+                           
                 value = state.stack.pop()
                 state.mem_extend(offset, 1)
 
-                logging.debug("Store to memory[" + str(offset) + "]: " + str(value))
+                logging.info("Store to memory[" + str(offset) + "]: " + str(value))
 
                 state.memory[offset] = value
 
@@ -565,11 +583,10 @@ class SVM:
 
             elif op == 'JUMP':
 
-                jump_addr = utils.get_concrete_int(state.stack.pop())
-
-                if (type(jump_addr) == BitVecRef):
-                    logging.debug("Invalid jump argument: JUMP <bitvector> at " + str(disassembly.instruction_list[state.pc]['address']))
-
+                try:
+                    jump_addr = utils.get_concrete_int(state.stack.pop())
+                except AttributeError:
+                    logging.debug("Invalid jump argument (symbolic address) at " + str(disassembly.instruction_list[state.pc]['address']))
                     return node
 
                 if (depth < self.max_depth):
@@ -614,22 +631,26 @@ class SVM:
                         if instr['opcode'] != "JUMPDEST":
                             logging.debug("Invalid jump destination: " + str(jump_addr))
                         else:
-                            if jump_addr not in self.addr_visited:
 
-                                self.addr_visited.append(jump_addr)
+                            # Prune branches that always evaluate as False
+                            if str(simplify(condition)) != "False":
 
-                                new_state = copy.deepcopy(state)
+                                if jump_addr not in self.addr_visited:
 
-                                new_state.pc = i
+                                    self.addr_visited.append(jump_addr)
 
-                                new_node = self._sym_exec(context, new_state, depth + 1)
-                                self.nodes[context.module['name'] + ':' + str(jump_addr)] = new_node
+                                    new_state = copy.deepcopy(state)
 
-                            logging.debug("Adding edge with condition: " + str(condition))
+                                    new_state.pc = i
 
-                            self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(jump_addr), JumpType.CONDITIONAL, condition))
+                                    new_node = self._sym_exec(context, new_state, depth + 1)
+                                    self.nodes[context.module['name'] + ':' + str(jump_addr)] = new_node
 
-                        if (self.branch_at_jumpi):
+                                logging.debug("Adding edge with condition: " + str(condition))
+
+                                self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(jump_addr), JumpType.CONDITIONAL, condition))
+
+                        if (self.split_all_states):
 
                             # Add new node for condition == False
 
@@ -683,32 +704,60 @@ class SVM:
                     logging.debug("CALL with non-zero value: " + str(value))
                     self.send_eth_locs.append({'address': start_addr, 'function_name': self.function_state['current_func']})
 
-                    if not self.function_state['sstore_called']:
-                        logging.info("Possible reentrancy at " + self.function_state['current_func'])
-                        self.reentrancy_funcs.append(self.function_state['current_func_addr'])
+                try:
+                    callee_address = hex(utils.get_concrete_int(to))
+                except AttributeError:
+                    logging.debug("Unable to get concrete call address.")
 
-                callee_address = hex(utils.get_concrete_int(to))
+                    ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                    state.stack.append(ret)
+
+                    continue
 
                 logging.info("CALL to: " + callee_address)
 
+                try:
+                    callee_module = self.modules[callee_address]
+                except KeyError:
+                    logging.debug("Contract " + str(callee_address) + "not loaded.")
+                    
+                    ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                    state.stack.append(ret)
+
+                    continue   
+
                 calldata = state.memory[utils.get_concrete_int(meminstart):utils.get_concrete_int(meminstart+meminsz)]
 
-                logging.info("calldata: " + str(calldata))        
+                logging.info("calldata: " + str(calldata))
 
                 try:
-
-                    callee_module = self.modules[callee_address]
-
+                    self.nodes[callee_module['name'] + ':0']
+                except KeyError:
                     callee_context = Context(callee_module, calldata = calldata, caller = context.address_to, origin = context.origin)
+                    self.last_caller = context.module['name'] + ":" + str(disassembly.instruction_list[state.pc]['address'])
                     self.nodes[callee_module['name'] + ':0'] = self._sym_exec(callee_context, State(), 0)
 
-                except KeyError:
+                self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), callee_module['name'] + ':0', JumpType.CALL))
 
-                    logging.info("No contract mapping at " + hex(to))
-
-                ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']) + "_" + str(randint(0, 1000)), 256)
-
+                ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                 state.stack.append(ret)
+
+                new_state = copy.deepcopy(state)
+
+                memoutstart = utils.get_concrete_int(memoutstart)
+                memoutsz = utils.get_concrete_int(memoutsz)
+
+                new_state.mem_extend(memoutstart, memoutsz)
+                new_state.memory[memoutstart:memoutstart + memoutsz] = self.last_returned
+
+                print("LAST RETURNED: " + str(simplify(self.last_returned[0])))
+
+                new_node = self._sym_exec(context, new_state, depth)
+
+                start_addr = disassembly.instruction_list[state.pc]['address']
+                self.nodes[context.module['name'] + ':' + str(start_addr)] = new_node
+
+                return node
 
             elif op == 'CALLCODE':
                 gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
@@ -718,8 +767,15 @@ class SVM:
 
             elif op == 'RETURN':
                 offset, length = state.stack.pop(), state.stack.pop()
-                # Not supported        
-                # logging.debug("Returning from block " +  str(start_addr))
+
+                try:
+                    self.last_returned = state.memory[utils.get_concrete_int(offset):utils.get_concrete_int(offset+length)]
+                except AttributeError:
+                    logging.debug("Return with symbolic length or offset. Not supported")
+
+                if len(self.last_caller):
+                    self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), self.last_caller, JumpType.RETURN))
+
                 return node
 
             elif op == 'SUICIDE':
