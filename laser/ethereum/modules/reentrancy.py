@@ -1,7 +1,4 @@
-from z3 import *
-import logging
-import re
-from ethereum.laser.utils import solve_path
+from laser.ethereum import utils
 import logging
 
 
