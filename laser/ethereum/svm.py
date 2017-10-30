@@ -113,7 +113,7 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, max_depth=MAX_DEPTH, split_all_states = False):
+    def __init__(self, modules, max_depth=MAX_DEPTH, simplify_model = True):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = []
@@ -126,7 +126,7 @@ class SVM:
         self.function_state = {}
         self.trace = ""
         self.max_depth = max_depth
-        self.split_all_states = split_all_states
+        self.simplify_model = simplify_model
         self.last_caller = ""
 
 
@@ -416,18 +416,21 @@ class SVM:
 
             elif op == 'CALLDATACOPY':
 
-                pass
-                #mstart = utils.get_concrete_int(state.stack.pop())
-                #dstart = utils.get_concrete_int(state.stack.pop())
-                #size = utils.get_concrete_int(state.stack.pop())
+                try:
+                    mstart = utils.get_concrete_int(state.stack.pop())
+                    dstart = utils.get_concrete_int(state.stack.pop())
+                    size = utils.get_concrete_int(state.stack.pop())
+                except:
+                    # Calldata is symbolic. Do nothing
+                    continue
 
-                #state.mem_extend(mstart, size)
+                state.mem_extend(mstart, size)
 
-                # i_data = dstart
+                i_data = context.calldata[dstart]
 
-                # for i in range(mstart, mstart + size):
-                #    state.memory[i] = context.calldata[i_data]
-                #    i_data += 1
+                for i in range(mstart, mstart + size):
+                    state.memory[i] = context.calldata[i_data]
+                    i_data += 1
 
             # Control flow
 
@@ -493,8 +496,10 @@ class SVM:
 
             elif op == 'MLOAD':
                 
+                offset = state.stack.pop()
+
                 try:
-                    offset = utils.get_concrete_int(state.stack.pop())
+                    offset = utils.get_concrete_int(offset)
                 except AttributeError:
                     logging.debug("MLOAD from symbolic index. Not supported")
                     data = BitVec("mem_" + str(offset), 256)
@@ -508,7 +513,7 @@ class SVM:
                     state.mem_extend(offset, 1)
                     state.memory[offset] = data
 
-                logging.info("Load from memory[" + str(offset) + "]: " + str(data))
+                logging.debug("Load from memory[" + str(offset) + "]: " + str(data))
 
                 state.stack.append(data)
 
@@ -523,7 +528,7 @@ class SVM:
                 value = state.stack.pop()
                 state.mem_extend(offset, 1)
 
-                logging.info("Store to memory[" + str(offset) + "]: " + str(value))
+                logging.debug("Store to memory[" + str(offset) + "]: " + str(value))
 
                 state.memory[offset] = value
 
@@ -650,7 +655,7 @@ class SVM:
 
                                 self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(jump_addr), JumpType.CONDITIONAL, condition))
 
-                        if (self.split_all_states):
+                        if not self.simplify_model:
 
                             # Add new node for condition == False
 
@@ -749,8 +754,6 @@ class SVM:
 
                 new_state.mem_extend(memoutstart, memoutsz)
                 new_state.memory[memoutstart:memoutstart + memoutsz] = self.last_returned
-
-                print("LAST RETURNED: " + str(simplify(self.last_returned[0])))
 
                 new_node = self._sym_exec(context, new_state, depth)
 
