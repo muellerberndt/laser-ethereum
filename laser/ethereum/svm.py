@@ -57,7 +57,7 @@ class Context():
         callvalue = BitVec("callvalue", 256),
         caller = BitVec("caller", 256),
         origin = BitVec("origin", 256),
-        address_to = BitVec("address_to", 256),
+        address = BitVec("address", 256),
         ):
 
         self.module = module
@@ -65,7 +65,7 @@ class Context():
         self.callvalue = callvalue
         self.caller = caller
         self.origin = origin
-        self.address_to = address_to
+        self.address = address
 
 
 
@@ -125,6 +125,7 @@ class SVM:
         self.simplify_model = simplify_model
         self.last_caller = ""
         self.total_states = 0
+        self.active_node_prefix = ""
 
 
     def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
@@ -156,7 +157,7 @@ class SVM:
         paths = []
         nodes_visited = []
 
-        self.depth_first_search(0, node_to, [], paths, 0, nodes_visited)
+        self.depth_first_search(self.active_node_prefix + ':0', node_to, [], paths, 0, nodes_visited)
 
         return paths
 
@@ -165,10 +166,18 @@ class SVM:
 
         logging.debug("Starting SVM execution")
 
+        self.active_node_prefix = self.modules[main_address]['name']
         context = Context(self.modules[main_address])
-        self.nodes[context.module['name'] + ":0"] = self._sym_exec(context, State(), 0)
+        self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(context, State(), 0)
 
         logging.info("Execution complete, saved " + str(self.total_states) + " states")
+
+        logging.debug("--- NODES ---")
+        logging.debug(self.nodes)
+        logging.debug("--- EDGES ---")
+
+        for e in self.edges:
+            logging.debug(str(e.as_dict()))
 
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges")
         logging.info("Resolving paths")
@@ -388,7 +397,7 @@ class SVM:
 
                 state.stack.append(exp)
 
-             # Call data
+             # Call data`
 
             elif op == 'CALLVALUE':
                 state.stack.append(context.callvalue)
@@ -439,7 +448,7 @@ class SVM:
             # Environment
 
             elif op == 'ADDRESS':
-                state.stack.append(context.address_to)
+                state.stack.append(context.address)
 
             elif op == 'BALANCE':
                 addr = state.stack.pop()
@@ -600,9 +609,9 @@ class SVM:
                             new_state = copy.deepcopy(state)
                             new_state.pc = i
                             new_node = self._sym_exec(context, new_state, depth + 1)
-                            self.nodes[context.module['name'] + ':' + str(jump_addr)] = new_node
+                            self.nodes[self.active_node_prefix + ':' + str(jump_addr)] = new_node
 
-                        self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(jump_addr), JumpType.UNCONDITIONAL))
+                        self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.active_node_prefix + ":" + str(jump_addr), JumpType.UNCONDITIONAL))
                     else:
                         self.trace += "Skipping invalid jump destination"
 
@@ -629,7 +638,8 @@ class SVM:
                             logging.debug("Invalid jump destination: " + str(jump_addr))
                         else:
 
-                            # Prune branches that always evaluate as False
+                            # Prune unreachable destinations (for CALLS with concrete function hash)
+
                             if str(simplify(condition)) != "False":
 
                                 if jump_addr not in self.addr_visited:
@@ -641,27 +651,25 @@ class SVM:
                                     new_state.pc = i
 
                                     new_node = self._sym_exec(context, new_state, depth + 1)
-                                    self.nodes[context.module['name'] + ':' + str(jump_addr)] = new_node
+                                    self.nodes[self.active_node_prefix + ':' + str(jump_addr)] = new_node
 
                                 logging.debug("Adding edge with condition: " + str(condition))
 
-                                self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(jump_addr), JumpType.CONDITIONAL, condition))
+                                self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.active_node_prefix + ":" + str(jump_addr), JumpType.CONDITIONAL, condition))
 
                         if not self.simplify_model:
-
-                            # Add new node for condition == False
 
                             new_state = copy.deepcopy(state)
 
                             new_node = self._sym_exec(context, new_state, depth)
 
                             start_addr = disassembly.instruction_list[state.pc]['address']
-                            self.nodes[context.module['name'] + ':' + start_addr] = new_node
+                            self.nodes[self.active_node_prefix + ':' + start_addr] = new_node
 
                             if (type(condition) == BoolRef):
-                                self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(start_addr), JumpType.CONDITIONAL, Not(condition)))
+                                self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.active_node_prefix + ":" + str(start_addr), JumpType.CONDITIONAL, Not(condition)))
                             else:
-                                self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), context.module['name'] + ":" + str(start_addr), JumpType.CONDITIONAL, condition == 0))                               
+                                self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.active_node_prefix + ":" + str(start_addr), JumpType.CONDITIONAL, condition == 0))                               
 
                             return node
 
@@ -700,7 +708,7 @@ class SVM:
 
                     continue
 
-                logging.info("CALL to: " + callee_address)
+                logging.info(op + " to: " + callee_address)
 
                 try:
                     callee_module = self.modules[callee_address]
@@ -716,14 +724,46 @@ class SVM:
 
                 logging.info("calldata: " + str(calldata))
 
-                try:
-                    self.nodes[callee_module['name'] + ':0']
-                except KeyError:
-                    callee_context = Context(callee_module, calldata = calldata, caller = context.address_to, origin = context.origin)
-                    self.last_caller = context.module['name'] + ":" + str(disassembly.instruction_list[state.pc]['address'])
-                    self.nodes[callee_module['name'] + ':0'] = self._sym_exec(callee_context, State(), 0)
+                self.last_caller = context.module['name'] + ":" + str(disassembly.instruction_list[state.pc]['address'])
+                prefix_temp = self.active_node_prefix
 
-                self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), callee_module['name'] + ':0', JumpType.CALL))
+                if (op == 'CALL'):
+                    
+                    self.active_node_prefix = callee_module['name'] + ':CALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
+                    callee_context = Context(callee_module, calldata = calldata, caller = context.address, origin = context.origin)
+
+                    self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0)
+
+                elif (op == 'CALLCODE'):
+
+                    self.active_node_prefix = callee_module['name'] + ':DELEGATECALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
+
+                    temp_code = context.code
+                    temp_value = context.value
+                    temp_caller = context.caller
+                    context.code  = callee_module.code
+                    context.value = value
+                    context.caller = context.address
+
+                    self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0)
+
+                    context.code = temp_code
+                    context.value = temp_value
+                    context.caller = temp_caller
+
+                elif (op == 'DELEGATECALL'):
+
+                    self.active_node_prefix = callee_module['name'] + ':CALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
+
+                    temp = context.code
+                    context.code  = callee_module.code
+
+                    self.nodes[self.active_node_prefix +':0'] = self._sym_exec(callee_context, State(), 0)
+
+                    context.code = temp
+
+                self.edges.append(Edge(prefix_temp + ":" + str(node.start_addr), self.active_node_prefix + ':0', JumpType.CALL))
+                self.active_node_prefix = prefix_temp
 
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                 state.stack.append(ret)
@@ -739,7 +779,7 @@ class SVM:
                 new_node = self._sym_exec(context, new_state, depth)
 
                 start_addr = disassembly.instruction_list[state.pc]['address']
-                self.nodes[context.module['name'] + ':' + str(start_addr)] = new_node
+                self.nodes[self.active_node_prefix + ':' + str(start_addr)] = new_node
 
                 return node
 
@@ -752,7 +792,7 @@ class SVM:
                     logging.debug("Return with symbolic length or offset. Not supported")
 
                 if len(self.last_caller):
-                    self.edges.append(Edge(context.module['name'] + ":" + str(node.start_addr), self.last_caller, JumpType.RETURN))
+                    self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.last_caller, JumpType.RETURN))
 
                 return node
 
