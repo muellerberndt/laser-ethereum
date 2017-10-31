@@ -700,10 +700,14 @@ class SVM:
                 # Not supported
                 state.stack.append(0)
 
-            elif op == 'CALL' or op == 'CALLCODE' or op == 'DELEGATECALL':
-                gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
-                state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
-
+            elif op in ('CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL'):
+                if op in ('CALL', 'CALLCODE'):
+                    gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
+                        state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
+                else:
+                    gas, to, meminstart, meminsz, memoutstart, memoutsz = \
+                        state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
+    
                 logging.info(op + " to " + str(to))
 
                 try:
@@ -765,19 +769,25 @@ class SVM:
                     ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                     state.stack.append(ret)
 
-                    continue   
+                    continue
+
+
+                logging.info("memory: " + str(state.memory))
+                logging.info("mem offset:" + str(utils.get_concrete_int(meminstart)))
 
                 calldata = state.memory[utils.get_concrete_int(meminstart):utils.get_concrete_int(meminstart+meminsz)]
+
 
                 logging.info("calldata: " + str(calldata))
 
                 self.last_caller = context.module['name'] + ":" + str(disassembly.instruction_list[state.pc]['address'])
                 prefix_temp = self.active_node_prefix
 
+                callee_context = Context(callee_module, calldata = calldata, caller = context.address, origin = context.origin)
+
                 if (op == 'CALL'):
                     
                     self.active_node_prefix = callee_module['name'] + ':CALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
-                    callee_context = Context(callee_module, calldata = calldata, caller = context.address, origin = context.origin)
 
                     self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0)
 
@@ -785,16 +795,16 @@ class SVM:
 
                     self.active_node_prefix = callee_module['name'] + ':DELEGATECALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
 
-                    temp_code = context.code
+                    temp_code = context.module['disassembly']
                     temp_value = context.value
                     temp_caller = context.caller
-                    context.code  = callee_module.code
+                    context.module['disassembly']  = callee_module['disassembly']
                     context.value = value
                     context.caller = context.address
 
                     self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0)
 
-                    context.code = temp_code
+                    context.module['disassembly'] = temp_code
                     context.value = temp_value
                     context.caller = temp_caller
 
@@ -802,12 +812,12 @@ class SVM:
 
                     self.active_node_prefix = callee_module['name'] + ':CALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
 
-                    temp = context.code
-                    context.code  = callee_module.code
+                    temp = context.module['disassembly']
+                    context.module['disassembly'] = callee_module['disassembly']
 
                     self.nodes[self.active_node_prefix +':0'] = self._sym_exec(callee_context, State(), 0)
 
-                    context.code = temp
+                    context.module['disassembly'] = temp
 
                 self.edges.append(Edge(prefix_temp + ":" + str(node.start_addr), self.active_node_prefix + ':0', JumpType.CALL))
                 self.active_node_prefix = prefix_temp
