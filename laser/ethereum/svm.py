@@ -1,5 +1,6 @@
+from laser.ethereum import helper
+from ethereum import utils
 from enum import Enum
-from laser.ethereum import utils
 from z3 import *
 import copy
 import logging
@@ -66,7 +67,7 @@ class Context():
         ):
 
         self.module = module
-        self.calldata = calldata
+        self.calldata = calldata # list of bytes / BitVec(8)
         self.callvalue = callvalue
         self.caller = caller
         self.origin = origin
@@ -236,7 +237,7 @@ class SVM:
 
             op = instr['opcode']
 
-            logging.debug("[" + context.module['name'] + "] " + utils.get_trace_line(instr, state))
+            logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
 
             state.pc += 1
 
@@ -296,39 +297,39 @@ class SVM:
             # Arithmetics
 
             elif op == 'ADD':
-                state.stack.append((utils.pop_bitvec(state) + utils.pop_bitvec(state)))
+                state.stack.append((helper.pop_bitvec(state) + helper.pop_bitvec(state)))
 
             elif op == 'SUB':
-                state.stack.append((utils.pop_bitvec(state) - utils.pop_bitvec(state)))
+                state.stack.append((helper.pop_bitvec(state) - helper.pop_bitvec(state)))
 
             elif op == 'MUL':
-                state.stack.append(utils.pop_bitvec(state) * utils.pop_bitvec(state))
+                state.stack.append(helper.pop_bitvec(state) * helper.pop_bitvec(state))
 
             elif op == 'DIV':
-                s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
+                s0, s1 = helper.pop_bitvec(state), helper.pop_bitvec(state)
 
                 state.stack.append(UDiv(s0, s1))
 
             elif op == 'MOD':
-                s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
+                s0, s1 = helper.pop_bitvec(state), helper.pop_bitvec(state)
                 state.stack.append(0 if s1 == 0 else s0 % s1)
 
             elif op == 'SDIV':
-                s0, s1 = utils.to_signed(utils.pop_bitvec(state)), utils.to_signed(utils.pop_bitvec(state))
+                s0, s1 = helper.to_signed(helper.pop_bitvec(state)), helper.to_signed(helper.pop_bitvec(state))
                 state.stack.append(0 if s1 == 0 else (abs(s0) // abs(s1) *
                                               (-1 if s0 * s1 < 0 else 1)) & TT256M1)
 
             elif op == 'SMOD':
-                s0, s1 = utils.to_signed(utils.pop_bitvec(state)), utils.to_signed(utils.pop_bitvec(state))
+                s0, s1 = helper.to_signed(helper.pop_bitvec(state)), helper.to_signed(helper.pop_bitvec(state))
                 state.stack.append(0 if s1 == 0 else (abs(s0) % abs(s1) *
                                               (-1 if s0 < 0 else 1)) & TT256M1)
 
             elif op == 'ADDMOD':
-                s0, s1, s2 = utils.pop_bitvec(state), utils.pop_bitvec(state), utils.pop_bitvec(state)
+                s0, s1, s2 = helper.pop_bitvec(state), helper.pop_bitvec(state), helper.pop_bitvec(state)
                 state.stack.append((s0 + s1) % s2 if s2 else 0)
 
             elif op == 'MULMOD':
-                s0, s1, s2 = utils.pop_bitvec(state), utils.pop_bitvec(state), utils.pop_bitvec(state)
+                s0, s1, s2 = helper.pop_bitvec(state), helper.pop_bitvec(state), helper.pop_bitvec(state)
                 state.stack.append((s0 * s1) % s2 if s2 else 0)
 
             elif op == 'EXP':
@@ -359,22 +360,22 @@ class SVM:
 
             elif op == 'LT':
 
-                exp = ULT(utils.pop_bitvec(state), utils.pop_bitvec(state))
+                exp = ULT(helper.pop_bitvec(state), helper.pop_bitvec(state))
                 state.stack.append(exp)
 
             elif op == 'GT':
 
-                exp = UGT(utils.pop_bitvec(state), utils.pop_bitvec(state))
+                exp = UGT(helper.pop_bitvec(state), helper.pop_bitvec(state))
                 state.stack.append(exp)
 
             elif op == 'SLT':
 
-                exp = utils.pop_bitvec(state) < utils.pop_bitvec(state)
+                exp = helper.pop_bitvec(state) < helper.pop_bitvec(state)
                 state.stack.append(exp)
 
             elif op == 'SGT':
 
-                exp = utils.pop_bitvec(state) > utils.pop_bitvec(state)
+                exp = helper.pop_bitvec(state) > helper.pop_bitvec(state)
                 state.stack.append(exp)
 
             elif op == 'EQ':
@@ -409,14 +410,23 @@ class SVM:
                 state.stack.append(context.callvalue)
 
             elif op == 'CALLDATALOAD':
+                # unpack 32 bytes from calldata into a word and put it on the stack
+                
                 try:
-                    offset = utils.get_concrete_int(state.stack.pop())
-                    state.stack.append(context.calldata[offset])
+                    offset = helper.get_concrete_int(state.stack.pop())
+
+                    val = b''
+
+                    for i in range(offset, offset + 32):
+                        val += context.calldata[i].to_bytes(1, byteorder='big')
+
+                    state.stack.append(BitVecVal(int.from_bytes(val, byteorder='big'), 256))
+
                 except AttributeError:
                     logging.debug("CALLDATALOAD: Unsupported symbolic index at " + str(disassembly.instruction_list[state.pc]['address']))
                     state.stack.append(BitVec("calldata_" + str(offset), 256))
                 except IndexError:
-                    logging.debug("Non-existent calldata offset, using symbolic variable instead")
+                    logging.debug("Calldata not set, using symbolic variable instead")
                     state.stack.append(BitVec("calldata_" + str(offset), 256))
                                        
             elif op == 'CALLDATASIZE':
@@ -431,9 +441,9 @@ class SVM:
             elif op == 'CALLDATACOPY':
 
                 try:
-                    mstart = utils.get_concrete_int(state.stack.pop())
-                    dstart = utils.get_concrete_int(state.stack.pop())
-                    size = utils.get_concrete_int(state.stack.pop())
+                    mstart = helper.get_concrete_int(state.stack.pop())
+                    dstart = helper.get_concrete_int(state.stack.pop())
+                    size = helper.get_concrete_int(state.stack.pop())
                 except:
                     # Calldata is symbolic. Do nothing
                     continue
@@ -470,9 +480,26 @@ class SVM:
                 state.stack.append(len(disassembly.instruction_list))
 
             if op == 'SHA3':
-                s0, s1 = utils.pop_bitvec(state), utils.pop_bitvec(state)
+                # index, length = helper.get_concrete_int(state.stack.pop()), helper.get_concrete_int(state.stack.pop())
 
-                state.stack.append(BitVec("KECCAC_" + str(s0) + ")", 256))
+                try:
+                    index, length = helper.get_concrete_int(state.stack.pop()), helper.get_concrete_int(state.stack.pop())
+                except:
+                    # Cannot hash symbolic values
+                    state.stack.append(BitVec("KECCAC_mem_" + str(index) + ")", 256))
+                    continue
+
+                # data = state.memory[index].as_long().to_bytes(32, byteorder='big')
+
+                # logging.info("SHA3 Data: " + str(data))
+
+                # keccac = utils.sha3(utils.bytearray_to_bytestr(data))
+
+                # logging.info("Hash: " + str(keccac))
+
+                # state.stack.append(BitVecVal(int(keccac), 256))
+
+                state.stack.append(BitVec("KECCAC_mem_" + str(index) + ")", 256))
 
             elif op == 'GASPRICE':
                 state.stack.append(0)
@@ -513,7 +540,7 @@ class SVM:
                 offset = state.stack.pop()
 
                 try:
-                    offset = utils.get_concrete_int(offset)
+                    offset = helper.get_concrete_int(offset)
                 except AttributeError:
                     logging.debug("MLOAD from symbolic index. Not supported")
                     data = BitVec("mem_" + str(offset), 256)
@@ -534,7 +561,7 @@ class SVM:
             elif op == 'MSTORE':
 
                 try:
-                    offset = utils.get_concrete_int(state.stack.pop())
+                    offset = helper.get_concrete_int(state.stack.pop())
                 except AttributeError:
                     logging.debug("MSTORE to symbolic index. Not supported")
                     continue
@@ -596,7 +623,7 @@ class SVM:
             elif op == 'JUMP':
 
                 try:
-                    jump_addr = utils.get_concrete_int(state.stack.pop())
+                    jump_addr = helper.get_concrete_int(state.stack.pop())
                 except AttributeError:
                     logging.debug("Invalid jump argument (symbolic address) at " + str(disassembly.instruction_list[state.pc]['address']))
                     return node
@@ -605,7 +632,7 @@ class SVM:
 
                     logging.debug("JUMP to " + str(jump_addr))
 
-                    i = utils.get_instruction_index(disassembly.instruction_list, jump_addr)
+                    i = helper.get_instruction_index(disassembly.instruction_list, jump_addr)
 
                     if disassembly.instruction_list[i]['opcode'] == "JUMPDEST":
                         logging.debug("Current nodes: " + str(self.nodes))
@@ -624,12 +651,12 @@ class SVM:
                 return node
 
             elif op == 'JUMPI':
-                jump_addr = utils.get_concrete_int(state.stack.pop())
+                jump_addr = helper.get_concrete_int(state.stack.pop())
                 condition = state.stack.pop()
 
                 if (depth < self.max_depth):
 
-                    i = utils.get_instruction_index(disassembly.instruction_list, jump_addr)
+                    i = helper.get_instruction_index(disassembly.instruction_list, jump_addr)
 
                     logging.debug("JUMPI to " + str(jump_addr))
 
@@ -711,7 +738,7 @@ class SVM:
                 logging.info(op + " to " + str(to))
 
                 try:
-                    callee_address = hex(utils.get_concrete_int(to))
+                    callee_address = hex(helper.get_concrete_int(to))
                     module = self.modules[callee_address]
                 except AttributeError:
                     logging.info("Unable to get concrete call address.")
@@ -773,12 +800,27 @@ class SVM:
 
 
                 logging.info("memory: " + str(state.memory))
-                logging.info("mem offset:" + str(utils.get_concrete_int(meminstart)))
+                logging.info("mem offset:" + str(helper.get_concrete_int(meminstart)))
 
-                calldata = state.memory[utils.get_concrete_int(meminstart):utils.get_concrete_int(meminstart+meminsz)]
+                calldata_words = state.memory[helper.get_concrete_int(meminstart):helper.get_concrete_int(meminstart+meminsz)]
 
+                logging.info("calldata_words: " + str(calldata_words))
+
+                calldata = []
+
+                for w in calldata_words:
+
+                    word = helper.get_concrete_int(w)
+
+                    by = word.to_bytes(32, 'big')
+
+                    logging.info("Type of by: " + str(type(by)))
+
+                    for b in by:
+                        calldata.append(b)
 
                 logging.info("calldata: " + str(calldata))
+                logging.info("calldatalength: " + str(len(calldata)))
 
                 self.last_caller = context.module['name'] + ":" + str(disassembly.instruction_list[state.pc]['address'])
                 prefix_temp = self.active_node_prefix
@@ -798,26 +840,34 @@ class SVM:
                     temp_code = context.module['disassembly']
                     temp_value = context.value
                     temp_caller = context.caller
+                    temp_calldata = context.calldata
+
                     context.module['disassembly']  = callee_module['disassembly']
                     context.value = value
                     context.caller = context.address
+                    context.calldata = calldata
 
                     self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0)
 
                     context.module['disassembly'] = temp_code
                     context.value = temp_value
                     context.caller = temp_caller
+                    context.calldata = temp_calldata
 
                 elif (op == 'DELEGATECALL'):
 
                     self.active_node_prefix = callee_module['name'] + ':CALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
 
-                    temp = context.module['disassembly']
+                    temp_code = context.module['disassembly']
+                    temp_calldata = context.calldata
+
                     context.module['disassembly'] = callee_module['disassembly']
+                    context.calldata = calldata
 
                     self.nodes[self.active_node_prefix +':0'] = self._sym_exec(callee_context, State(), 0)
 
-                    context.module['disassembly'] = temp
+                    context.module['disassembly'] = temp_code
+                    context.calldata = temp_calldata
 
                 self.edges.append(Edge(prefix_temp + ":" + str(node.start_addr), self.active_node_prefix + ':0', JumpType.CALL))
                 self.active_node_prefix = prefix_temp
@@ -827,8 +877,8 @@ class SVM:
 
                 new_state = copy.deepcopy(state)
 
-                memoutstart = utils.get_concrete_int(memoutstart)
-                memoutsz = utils.get_concrete_int(memoutsz)
+                memoutstart = helper.get_concrete_int(memoutstart)
+                memoutsz = helper.get_concrete_int(memoutsz)
 
                 new_state.mem_extend(memoutstart, memoutsz)
                 # new_state.memory[memoutstart:memoutstart + memoutsz] = self.last_returned
@@ -844,7 +894,7 @@ class SVM:
                 offset, length = state.stack.pop(), state.stack.pop()
 
                 try:
-                    self.last_returned = state.memory[utils.get_concrete_int(offset):utils.get_concrete_int(offset+length)]
+                    self.last_returned = state.memory[helper.get_concrete_int(offset):helper.get_concrete_int(offset+length)]
                 except AttributeError:
                     logging.debug("Return with symbolic length or offset. Not supported")
 
