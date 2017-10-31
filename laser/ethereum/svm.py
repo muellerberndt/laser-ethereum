@@ -480,13 +480,14 @@ class SVM:
                 state.stack.append(len(disassembly.instruction_list))
 
             if op == 'SHA3':
-                # index, length = helper.get_concrete_int(state.stack.pop()), helper.get_concrete_int(state.stack.pop())
+                op0, op1 = state.stack.pop(), state.stack.pop()
 
                 try:
-                    index, length = helper.get_concrete_int(state.stack.pop()), helper.get_concrete_int(state.stack.pop())
+                    index, length  = helper.get_concrete_int(op0), helper.get_concrete_int(op1)
+
                 except:
                     # Cannot hash symbolic values
-                    state.stack.append(BitVec("KECCAC_mem_" + str(index) + ")", 256))
+                    state.stack.append(BitVec("KECCAC_mem_" + str(op0) + ")", 256))
                     continue
 
                 # data = state.memory[index].as_long().to_bytes(32, byteorder='big')
@@ -799,25 +800,31 @@ class SVM:
                     continue
 
 
-                logging.info("memory: " + str(state.memory))
-                logging.info("mem offset:" + str(helper.get_concrete_int(meminstart)))
-
-                calldata_words = state.memory[helper.get_concrete_int(meminstart):helper.get_concrete_int(meminstart+meminsz)]
-
-                logging.info("calldata_words: " + str(calldata_words))
+                # logging.info("memory: " + str(state.memory))
+                # logging.info("mem offset:" + str(helper.get_concrete_int(meminstart)))
 
                 calldata = []
 
-                for w in calldata_words:
+                # Attempt to write concrete calldata
 
-                    word = helper.get_concrete_int(w)
+                try:
+                    calldata_words = state.memory[helper.get_concrete_int(meminstart):helper.get_concrete_int(meminstart+meminsz)]
 
-                    by = word.to_bytes(32, 'big')
+                    for w in calldata_words:
 
-                    logging.info("Type of by: " + str(type(by)))
+                        word = helper.get_concrete_int(w)
 
-                    for b in by:
-                        calldata.append(b)
+                        by = word.to_bytes(32, 'big')
+
+                        logging.info("Type of by: " + str(type(by)))
+
+                        for b in by:
+                            calldata.append(b)
+
+                except AttributeError:
+
+                    pass
+
 
                 logging.info("calldata: " + str(calldata))
                 logging.info("calldatalength: " + str(len(calldata)))
