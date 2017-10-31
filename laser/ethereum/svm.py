@@ -25,6 +25,11 @@ class JumpType(Enum):
     RETURN = 4
 
 
+class CalldataType(Enum):
+    CONCRETE = 1
+    SYMBOLIC = 2
+
+
 class State(): 
 
     def __init__(self, gas = 1000000):
@@ -64,6 +69,7 @@ class Context():
         caller = BitVec("caller", 256),
         origin = BitVec("origin", 256),
         address = BitVec("address", 256),
+        calldata_type = CalldataType.SYMBOLIC
         ):
 
         self.module = module
@@ -72,7 +78,7 @@ class Context():
         self.caller = caller
         self.origin = origin
         self.address = address
-
+        self.calldata_type = calldata_type
 
 
 class Node:
@@ -431,12 +437,10 @@ class SVM:
                                        
             elif op == 'CALLDATASIZE':
 
-                calldatasize = len(context.calldata)
-
-                if (calldatasize > 0):
-                    state.stack.append(BitVecVal(calldatasize, 256))
-                else:
+                if context.calldata_type == CalldataType.SYMBOLIC:
                     state.stack.append(BitVec("calldatasize", 256))
+                else:
+                    state.stack.append(BitVecval(len(context.calldata), 256))
 
             elif op == 'CALLDATACOPY':
 
@@ -816,23 +820,28 @@ class SVM:
 
                         by = word.to_bytes(32, 'big')
 
-                        logging.info("Type of by: " + str(type(by)))
-
                         for b in by:
                             calldata.append(b)
 
+                        calldata_type = CalldataType.CONCRETE
+
                 except AttributeError:
 
-                    pass
+                    logging.debug("Encountered symbolic calldata offset, size or value")
 
+                    # This can still be improved by allowing a mix of symbolic and concrete values in calldata
+                    # But for now we simply abort if there's any symbolic values in the mix
+
+                    calldata = []
+                    calldata_type = CalldataType.SYMBOLIC
 
                 logging.info("calldata: " + str(calldata))
-                logging.info("calldatalength: " + str(len(calldata)))
+                # logging.info("calldatalength: " + str(len(calldata)))
 
                 self.last_caller = context.module['name'] + ":" + str(disassembly.instruction_list[state.pc]['address'])
                 prefix_temp = self.active_node_prefix
 
-                callee_context = Context(callee_module, calldata = calldata, caller = context.address, origin = context.origin)
+                callee_context = Context(callee_module, calldata = calldata, caller = context.address, origin = context.origin, calldata_type = calldata_type)
 
                 if (op == 'CALL'):
                     
