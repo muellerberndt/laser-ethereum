@@ -211,7 +211,7 @@ class SVM:
             paths = self.find_paths(key)
             self.paths[key] = paths
 
-            logging.info("NODE '" + str(key) + "': " + str(self.nodes[key].as_dict()))
+            logging.info("NODE '" + str(key) + "': " + str(self.nodes[key].uid))
 
 
     def _sym_exec(self, context, state, depth=0, constraints=[]):
@@ -719,7 +719,7 @@ class SVM:
                                     new_constraints.append(condition)
 
                                     new_node = self._sym_exec(context, new_state, depth + 1, new_constraints)
-                                    self.nodes[self.active_node_prefix + ':' + str(jump_addr)] = new_node
+                                    self.nodes[new_node.uid] = new_node
 
                                     logging.debug("Adding edge with condition: " + str(condition))
 
