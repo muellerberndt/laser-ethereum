@@ -4,7 +4,7 @@ import logging
 
 def fire(modules, main_address):
 
-    _svm = svm.SVM(modules, simplify_model = False)
+    _svm = svm.SVM(modules, simplify_model = True)
 
     logging.info("Firing lasers!")
 

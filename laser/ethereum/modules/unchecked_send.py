@@ -1,3 +1,4 @@
+from laser.ethereum import helper
 from z3 import *
 
 def execute(svm):
@@ -10,4 +11,7 @@ def execute(svm):
 			if(instruction['opcode'] == "CALL"):
 				state = node.states[instruction['address']]
 
-				print(instruction['opcode'] + " - " + str(state.as_dict()))
+				gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
+                        state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
+
+				print("CALL with value: " + str(value))

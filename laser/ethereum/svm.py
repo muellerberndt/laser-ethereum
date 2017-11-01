@@ -207,13 +207,6 @@ class SVM:
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges")
         logging.info("Resolving paths")
 
-        # for key in self.nodes:
-
-        #    paths = self.find_paths(key)
-        #    self.paths[key] = paths
-
-        #    logging.info("NODE '" + str(key) + "': " + str(self.nodes[key].uid))
-
 
     def _sym_exec(self, context, state, depth=0, constraints=[]):
     
@@ -224,7 +217,7 @@ class SVM:
 
         node = Node(context.module['name'], start_addr, constraints)
 
-        logging.info("- Entering block " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
+        # logging.info("- Entering block " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
         if start_addr == 0:
             self.function_state['current_func'] = "prologue"
@@ -255,10 +248,12 @@ class SVM:
 
             node.instruction_list.append(instr)
 
-            node.states[disassembly.instruction_list[state.pc]['address']] = state
+            node.states[disassembly.instruction_list[state.pc]['address']] = copy.deepcopy(state)
             self.total_states += 1
 
             op = instr['opcode']
+
+            # logging.debug(str(instr['address']) + " " + instr['opcode'] + str(state.stack))
 
             # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
 
@@ -271,13 +266,16 @@ class SVM:
                 state.stack.append(value)
 
             elif op.startswith('DUP'):
-                _depth = int(op[3:])
-                state.stack.append(state.stack[-_depth])
+                dpth = int(op[3:])
+
+                state.stack.append(state.stack[-dpth])
 
             elif op.startswith('SWAP'):
+
                 dpth = int(op[4:])
-                temp = state.stack[-dpth - 1]
-                state.stack[-dpth - 1] = state.stack[-1]
+
+                temp = state.stack[-dpth-1]
+                state.stack[-dpth-1] = state.stack[-1]
                 state.stack[-1] = temp
 
             elif op == 'POP':
@@ -424,7 +422,7 @@ class SVM:
 
                 state.stack.append(exp)
 
-             # Call data`
+            # Call data
 
             elif op == 'CALLVALUE':
                 state.stack.append(context.callvalue)
@@ -432,8 +430,10 @@ class SVM:
             elif op == 'CALLDATALOAD':
                 # unpack 32 bytes from calldata into a word and put it on the stack
                 
+                op0 = state.stack.pop()
+
                 try:
-                    offset = helper.get_concrete_int(state.stack.pop())
+                    offset = helper.get_concrete_int(op0)
 
                     val = b''
 
@@ -444,10 +444,10 @@ class SVM:
 
                 except AttributeError:
                     logging.debug("CALLDATALOAD: Unsupported symbolic index at " + str(disassembly.instruction_list[state.pc]['address']))
-                    state.stack.append(BitVec("calldata_" + str(offset), 256))
+                    state.stack.append(BitVec("calldata_" + str(op0), 256))
                 except IndexError:
                     logging.debug("Calldata not set, using symbolic variable instead")
-                    state.stack.append(BitVec("calldata_" + str(offset), 256))
+                    state.stack.append(BitVec("calldata_" + str(op0), 256))
                                        
             elif op == 'CALLDATASIZE':
 
@@ -457,22 +457,23 @@ class SVM:
                     state.stack.append(BitVecVal(len(context.calldata), 256))
 
             elif op == 'CALLDATACOPY':
+                op0, op1, op2 = state.stack.pop(), state.stack.pop(), state.stack.pop()
 
                 try:
-                    mstart = helper.get_concrete_int(state.stack.pop())
-                    dstart = helper.get_concrete_int(state.stack.pop())
-                    size = helper.get_concrete_int(state.stack.pop())
+                    mstart = helper.get_concrete_int(op0)
+                    dstart = helper.get_concrete_int(op1)
+                    size = helper.get_concrete_int(op2)
+
+                    state.mem_extend(mstart, size)
+
+                    i_data = context.calldata[dstart]
+
+                    for i in range(mstart, mstart + size):
+                        state.memory[i] = context.calldata[i_data]
+                        i_data += 1
                 except:
                     # Calldata is symbolic. Do nothing
                     continue
-
-                state.mem_extend(mstart, size)
-
-                i_data = context.calldata[dstart]
-
-                for i in range(mstart, mstart + size):
-                    state.memory[i] = context.calldata[i_data]
-                    i_data += 1
 
             # Control flow
 
@@ -662,18 +663,23 @@ class SVM:
                 try:
                     jump_addr = helper.get_concrete_int(state.stack.pop())
                 except AttributeError:
-                    logging.debug("Invalid jump argument (symbolic address) at " + str(disassembly.instruction_list[state.pc]['address']))
+                    logging.info("Invalid jump argument (symbolic address) at " + str(disassembly.instruction_list[state.pc]['address']))
                     return node
+
+                logging.info(str(disassembly.instruction_list[state.pc]['address']) + ": JUMP: " + str(jump_addr))
 
                 if (depth < self.max_depth):
 
                     i = helper.get_instruction_index(disassembly.instruction_list, jump_addr)
 
-                    if disassembly.instruction_list[i]['opcode'] == "JUMPDEST":
+                    if i is None:
+                        logging.info("JUMP to invalid address")
+                        continue
 
-                        # if jump_addr not in self.addr_visited:
+                    opcode = disassembly.instruction_list[i]['opcode']
 
-                        # self.addr_visited.append(jump_addr)
+                    if opcode == "JUMPDEST":
+
                         new_state = copy.deepcopy(state)
                         new_state.pc = i
 
@@ -682,13 +688,18 @@ class SVM:
 
                         self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
                     else:
-                        logging.debug("Skipping invalid jump destination")
+                        logging.info("Skipping JUMP to invalid destination.")
 
                 return node
 
             elif op == 'JUMPI':
-                jump_addr = helper.get_concrete_int(state.stack.pop())
-                condition = state.stack.pop()
+                op0, condition = state.stack.pop(), state.stack.pop()
+
+                try:
+                    jump_addr = helper.get_concrete_int(op0)
+                except:
+                    logging.info("Skipping JUMPI to invalid destination.")
+                    continue
 
                 if (depth < self.max_depth):
 
@@ -698,6 +709,7 @@ class SVM:
 
                     if not i:
                         logging.debug("Invalid jump destination: " + str(jump_addr))
+
                     else:
                         instr = disassembly.instruction_list[i]
 
@@ -716,13 +728,12 @@ class SVM:
                                     self.addr_visited.append(jump_addr)
 
                                     new_state = copy.deepcopy(state)
-
                                     new_state.pc = i
 
                                     new_constraints = copy.deepcopy(constraints)
                                     new_constraints.append(condition)
 
-                                    new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
+                                    new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=new_constraints)
                                     self.nodes[new_node.uid] = new_node
 
                                     logging.debug("Adding edge with condition: " + str(condition))
@@ -733,7 +744,10 @@ class SVM:
 
                             new_state = copy.deepcopy(state)
 
-                            new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
+                            new_constraints = copy.deepcopy(constraints)
+                            new_constraints.append(Not(condition))
+
+                            new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=new_constraints)
 
                             start_addr = disassembly.instruction_list[state.pc]['address']
                             self.nodes[new_node.uid] = new_node
@@ -917,7 +931,7 @@ class SVM:
                 self.nodes[new_node.uid] = new_node
 
                 for ret_uid in self.pending_returns[self.last_call_address]:
-                    self.edges.append(Edge(ret_uid, new_node.uid, JumpType.RETURN))            
+                    self.edges.append(Edge(ret_uid, new_node.uid, JumpType.RETURN))
 
                 return node
 

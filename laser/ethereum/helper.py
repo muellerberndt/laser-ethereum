@@ -26,6 +26,7 @@ def get_instruction_index(instruction_list, address):
 	for instr in instruction_list:
 		if instr['address'] == address:
 			return index
+
 		index += 1
 
 	return None
