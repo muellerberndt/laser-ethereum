@@ -33,10 +33,12 @@ def get_instruction_index(instruction_list, address):
 
 def get_trace_line(instr, state):
 
-	# stack = re.sub("(\d+)",	lambda m: hex(int(m.group(1))), str(state.stack))
-	# stack = re.sub("\n", "", stack)
+	stack = str(state.stack[::-1])
 
-	return str(instr['address']) + " " + instr['opcode'] + "\tSTACK: " + str(state.stack)
+	stack = re.sub("(\d+)",	lambda m: hex(int(m.group(1))), stack)
+	stack = re.sub("\n", "", stack)
+
+	return str(instr['address']) + " " + instr['opcode'] + "\tSTACK: " + stack
 
 
 def pop_bitvec(state):

@@ -1,12 +1,13 @@
+from z3 import *
+
 def execute(svm):
 
 	for k in svm.nodes:
 		node = svm.nodes[k]
 
 		for instruction in node.instruction_list:
-			# print(str(instruction))
 
-			if(instruction['opcode'] == "DELEGATECALL"):
+			if(instruction['opcode'] == "CALL"):
 				state = node.states[instruction['address']]
 
 				print(instruction['opcode'] + " - " + str(state.as_dict()))

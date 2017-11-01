@@ -862,7 +862,7 @@ class SVM:
 
                 if (op == 'CALL'):
 
-                    new_node = self._sym_exec(callee_context, State(), 0, depth=depth+1, constraints=constraints)
+                    new_node = self._sym_exec(callee_context, State(), depth=depth+1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
                 elif (op == 'CALLCODE'):
@@ -877,7 +877,7 @@ class SVM:
                     context.caller = context.address
                     context.calldata = calldata
 
-                    new_node = self._sym_exec(callee_context, State(), 0, depth=depth+1, constraints=constraints)
+                    new_node = self._sym_exec(callee_context, State(), depth=depth+1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
                     context.module['disassembly'] = temp_code
@@ -893,7 +893,7 @@ class SVM:
                     context.module['disassembly'] = callee_module['disassembly']
                     context.calldata = calldata
 
-                    new_node = self._sym_exec(callee_context, State(), 0, depth=depth + 1, constraints=constraints)
+                    new_node = self._sym_exec(callee_context, State(), depth=depth + 1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
                     context.module['disassembly'] = temp_code
