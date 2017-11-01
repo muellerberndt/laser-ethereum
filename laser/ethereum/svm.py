@@ -32,7 +32,7 @@ class CalldataType(Enum):
 
 class State(): 
 
-    def __init__(self, gas = 1000000):
+    def __init__(self, gas=1000000):
         self.storage = {}
         self.memory = []
         self.stack = []
@@ -43,7 +43,6 @@ class State():
     def as_dict(self):
 
         return {'memory': self.memory, 'stack': self.stack, 'storage': self.storage, 'pc': self.pc, 'gas': self.gas}
-
 
 
     def mem_extend(self, start, sz):
@@ -73,7 +72,7 @@ class Context():
         ):
 
         self.module = module
-        self.calldata = calldata # list of bytes / BitVec(8)
+        self.calldata = calldata # bytelist
         self.callvalue = callvalue
         self.caller = caller
         self.origin = origin
@@ -83,11 +82,12 @@ class Context():
 
 class Node:
 
-    def __init__(self, module_name, start_addr=0):
+    def __init__(self, module_name, start_addr=0, constraints = []):
         self.module_name = module_name
         self.start_addr = start_addr
         self.instruction_list = []
         self.states = {}
+        self.constraints = constraints
 
     def __str__(self):
         return str(self.as_dict())
@@ -103,7 +103,7 @@ class Node:
 
             code += "\\n"
 
-        return {'module_name': self.module_name, 'code': code, 'start_addr': self.start_addr, 'instruction_list': self.instruction_list, 'states': self.states}
+        return {'module_name': self.module_name, 'code': code, 'start_addr': self.start_addr, 'instruction_list': self.instruction_list, 'states': self.states, 'constraints': self.constraints}
 
 
 class Edge:
@@ -136,6 +136,7 @@ class SVM:
         self.max_depth = max_depth
         self.simplify_model = simplify_model
         self.last_caller = ""
+        self.total_nodes = 0
         self.total_states = 0
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
@@ -181,7 +182,7 @@ class SVM:
 
         self.active_node_prefix = self.modules[main_address]['name']
         context = Context(self.modules[main_address])
-        self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(context, State(), 0)
+        self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(context, State())
 
         logging.info("Execution complete, saved " + str(self.total_states) + " states")
 
@@ -198,18 +199,18 @@ class SVM:
         for key in self.nodes:
 
             paths = self.find_paths(key)
-
-            logging.debug("Found " + str(len(paths)) + " paths to node " + str(key))
-
             self.paths[key] = paths
 
+            logging.info("NODE '" + key + "': " + str(self.nodes[key].as_dict()))
 
-    def _sym_exec(self, context, state, depth):
+
+    def _sym_exec(self, context, state, depth=0, constraints=[]):
     
         disassembly = context.module['disassembly']
 
         start_addr = disassembly.instruction_list[state.pc]['address']
-        node = Node(context.module['name'], start_addr)
+
+        node = Node(context.module['name'], start_addr, constraints)
 
         logging.debug("- Entering block " + self.active_node_prefix + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
@@ -661,7 +662,8 @@ class SVM:
                             self.addr_visited.append(jump_addr)
                             new_state = copy.deepcopy(state)
                             new_state.pc = i
-                            new_node = self._sym_exec(context, new_state, depth + 1)
+
+                            new_node = self._sym_exec(context, new_state, depth + 1, constraints)
                             self.nodes[self.active_node_prefix + ':' + str(jump_addr)] = new_node
 
                         self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.active_node_prefix + ":" + str(jump_addr), JumpType.UNCONDITIONAL))
@@ -691,7 +693,7 @@ class SVM:
                             logging.debug("Invalid jump destination: " + str(jump_addr))
                         else:
 
-                            # Prune unreachable destinations (for CALLS with concrete function hash)
+                            # Prune unreachable destinations (if concrete values are used)
 
                             if str(simplify(condition)) != "False":
 
@@ -703,7 +705,10 @@ class SVM:
 
                                     new_state.pc = i
 
-                                    new_node = self._sym_exec(context, new_state, depth + 1)
+                                    new_constraints = copy.deepcopy(constraints)
+                                    new_constraints.append(condition)
+
+                                    new_node = self._sym_exec(context, new_state, depth + 1, new_constraints)
                                     self.nodes[self.active_node_prefix + ':' + str(jump_addr)] = new_node
 
                                 logging.debug("Adding edge with condition: " + str(condition))
@@ -714,7 +719,7 @@ class SVM:
 
                             new_state = copy.deepcopy(state)
 
-                            new_node = self._sym_exec(context, new_state, depth)
+                            new_node = self._sym_exec(context, new_state, depth, constraints)
 
                             start_addr = disassembly.instruction_list[state.pc]['address']
                             self.nodes[self.active_node_prefix + ':' + str(start_addr)] = new_node
@@ -798,8 +803,8 @@ class SVM:
                     else:
                          logging.info("Dynamic loader unavailable. Skipping call")
                          ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
-                         state.stack.append(ret)     
-                         continue  
+                         state.stack.append(ret)
+                         continue
 
 
                 callee_address = module['address']
@@ -844,7 +849,7 @@ class SVM:
                 if (op == 'CALL'):
                     
                     self.active_node_prefix = callee_module['name'] + ':CALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
-                    self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0)
+                    self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0, constraints)
 
                 elif (op == 'CALLCODE'):
 
@@ -860,7 +865,7 @@ class SVM:
                     context.caller = context.address
                     context.calldata = calldata
 
-                    self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0)
+                    self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0, constraints)
 
                     context.module['disassembly'] = temp_code
                     context.value = temp_value
@@ -877,7 +882,7 @@ class SVM:
                     context.module['disassembly'] = callee_module['disassembly']
                     context.calldata = calldata
 
-                    self.nodes[self.active_node_prefix +':0'] = self._sym_exec(callee_context, State(), 0)
+                    self.nodes[self.active_node_prefix +':0'] = self._sym_exec(callee_context, State(), 0, constraints)
 
                     context.module['disassembly'] = temp_code
                     context.calldata = temp_calldata
@@ -896,7 +901,7 @@ class SVM:
                 new_state.mem_extend(memoutstart, memoutsz)
                 # new_state.memory[memoutstart:memoutstart + memoutsz] = self.last_returned
 
-                new_node = self._sym_exec(context, new_state, depth)
+                new_node = self._sym_exec(context, new_state, depth, constraints)
 
                 start_addr = disassembly.instruction_list[state.pc]['address']
                 self.nodes[self.active_node_prefix + ':' + str(start_addr)] = new_node

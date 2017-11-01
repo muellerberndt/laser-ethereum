@@ -127,7 +127,6 @@ def solve_path(svm, path):
         return unsat
 
 
-
 def satisfy_recursively(svm, node_addr, models = [], visited = []):
 
     if (node_addr in visited):
