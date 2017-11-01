@@ -145,7 +145,8 @@ class SVM:
         self.trace = ""
         self.max_depth = max_depth
         self.simplify_model = simplify_model
-        self.last_caller = ""
+        self.last_call_address = None
+        self.pending_returns = {}
         self.total_states = 0
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
@@ -206,12 +207,12 @@ class SVM:
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges")
         logging.info("Resolving paths")
 
-        for key in self.nodes:
+        # for key in self.nodes:
 
-            paths = self.find_paths(key)
-            self.paths[key] = paths
+        #    paths = self.find_paths(key)
+        #    self.paths[key] = paths
 
-            logging.info("NODE '" + str(key) + "': " + str(self.nodes[key].uid))
+        #    logging.info("NODE '" + str(key) + "': " + str(self.nodes[key].uid))
 
 
     def _sym_exec(self, context, state, depth=0, constraints=[]):
@@ -843,7 +844,7 @@ class SVM:
 
                 except AttributeError:
 
-                    logging.info("Encountered symbolic calldata offset")
+                    logging.info("Encountered start_addrymbolic calldata offset")
 
                     # This can still be improved by allowing a mix of symbolic and concrete values in calldata
                     # But for now we simply abort if there's any symbolic values in the mix
@@ -851,20 +852,17 @@ class SVM:
                     calldata_type = CalldataType.SYMBOLIC
                     calldata = []
 
-                self.last_caller = node.uid
-                prefix_temp = self.active_node_prefix
+                self.last_call_address = disassembly.instruction_list[state.pc]['address']
+                self.pending_returns[self.last_call_address] = []
 
                 callee_context = Context(callee_module, calldata = calldata, caller = context.address, origin = context.origin, calldata_type = calldata_type)
 
                 if (op == 'CALL'):
-                    
-                    self.active_node_prefix = callee_module['name'] + ':CALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
+
                     new_node = self._sym_exec(callee_context, State(), 0, constraints)
                     self.nodes[new_node.uid] = new_node
 
                 elif (op == 'CALLCODE'):
-
-                    self.active_node_prefix = callee_module['name'] + ':DELEGATECALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
 
                     temp_code = context.module['disassembly']
                     temp_value = context.value
@@ -886,8 +884,6 @@ class SVM:
 
                 elif (op == 'DELEGATECALL'):
 
-                    self.active_node_prefix = callee_module['name'] + ':CALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
-
                     temp_code = context.module['disassembly']
                     temp_calldata = context.calldata
 
@@ -901,7 +897,6 @@ class SVM:
                     context.calldata = temp_calldata
 
                 self.edges.append(Edge(node.uid, new_node.uid, JumpType.CALL))
-                self.active_node_prefix = prefix_temp
 
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                 state.stack.append(ret)
@@ -918,6 +913,9 @@ class SVM:
 
                 self.nodes[new_node.uid] = new_node
 
+                for ret_uid in self.pending_returns[self.last_call_address]:
+                    self.edges.append(Edge(ret_uid, new_node.uid, JumpType.RETURN))            
+
                 return node
 
             elif op == 'RETURN':
@@ -928,8 +926,8 @@ class SVM:
                 except AttributeError:
                     logging.debug("Return with symbolic length or offset. Not supported")
 
-                if self.last_caller is not None:
-                    self.edges.append(Edge(node.uid, self.last_caller, JumpType.RETURN))
+                if self.last_call_address is not None:
+                    self.pending_returns[self.last_call_address].append(node.uid)
 
                 return node
 
