@@ -545,13 +545,13 @@ class SVM:
                 
                 op0 = state.stack.pop()
 
-                logging.info("MLOAD MEM: " + str(state.memory))
+                logging.debug("MLOAD MEM: " + str(state.memory))
 
                 try:
                     offset = helper.get_concrete_int(op0)
                 except AttributeError:
                     logging.debug("Can't MLOAD from symbolic index")
-                    data = BitVec("mem_" + str(offset), 256)
+                    data = BitVec("mem_" + str(op0), 256)
                     continue
 
                 try:   
@@ -561,7 +561,7 @@ class SVM:
                 except TypeError: # Symbolic memory
                     data = state.memory[offset]
 
-                logging.info("Load from memory[" + str(offset) + "]: " + str(data))
+                logging.debug("Load from memory[" + str(offset) + "]: " + str(data))
 
                 state.stack.append(data)
 
@@ -576,13 +576,11 @@ class SVM:
                 value = state.stack.pop()
                 state.mem_extend(offset, 32)
 
-                logging.info("Store to memory[" + str(offset) + "]: " + str(value))
+                logging.debug("Store to memory[" + str(offset) + "]: " + str(value))
 
                 try:
                     # Attempt to concretize value
                     _bytes = helper.concrete_int_to_bytes(value)
-
-                    logging.info("concrete_int_to_bytes returned: " + str(_bytes))
 
                     i = 0
 
@@ -592,7 +590,7 @@ class SVM:
                 except AttributeError:
                     state.memory[offset] = value
 
-                logging.info("MSTORE mem: " + str(state.memory))
+                logging.debug("MSTORE mem: " + str(state.memory))
 
             elif op == 'MSTORE8':
                 # Is this ever used?
@@ -756,8 +754,6 @@ class SVM:
                 else:
                     gas, to, meminstart, meminsz, memoutstart, memoutsz = \
                         state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
-    
-                logging.info(op + " to " + str(to))
 
                 try:
                     callee_address = hex(helper.get_concrete_int(to))
@@ -828,6 +824,7 @@ class SVM:
                 try:
                     calldata = state.memory[helper.get_concrete_int(meminstart):helper.get_concrete_int(meminstart+meminsz)]
                     calldata_type = CalldataType.CONCRETE
+                    logging.info("calldata: " + str(calldata))
 
                 except AttributeError:
 
@@ -837,8 +834,7 @@ class SVM:
                     # But for now we simply abort if there's any symbolic values in the mix
 
                     calldata_type = CalldataType.SYMBOLIC
-
-                logging.info("calldata: " + str(calldata))
+                    calldata = []
 
                 self.last_caller = context.module['name'] + ":" + str(disassembly.instruction_list[state.pc]['address'])
                 prefix_temp = self.active_node_prefix
