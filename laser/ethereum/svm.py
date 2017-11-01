@@ -11,7 +11,7 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 12
+MAX_DEPTH = 16
 
 gbl_next_uid = 0
 
@@ -218,12 +218,13 @@ class SVM:
     def _sym_exec(self, context, state, depth=0, constraints=[]):
     
         disassembly = context.module['disassembly']
+        depth = depth
 
         start_addr = disassembly.instruction_list[state.pc]['address']
 
         node = Node(context.module['name'], start_addr, constraints)
 
-        logging.debug("- Entering block " + self.active_node_prefix + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
+        logging.info("- Entering block " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
         if start_addr == 0:
             self.function_state['current_func'] = "prologue"
@@ -248,31 +249,35 @@ class SVM:
 
         while not halt:
 
+            # logging.info("- Entering instruction: " + str(disassembly.instruction_list[state.pc]))
+
             instr = disassembly.instruction_list[state.pc]
+
             node.instruction_list.append(instr)
+
             node.states[disassembly.instruction_list[state.pc]['address']] = state
             self.total_states += 1
 
             op = instr['opcode']
 
-            logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
+            # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
 
             state.pc += 1
 
             # stack ops
-            
+
             if op.startswith("PUSH"):
                 value = BitVecVal(int(instr['argument'][2:], 16), 256)
                 state.stack.append(value)
 
             elif op.startswith('DUP'):
-                depth = int(op[3:])
-                state.stack.append(state.stack[-depth])
+                _depth = int(op[3:])
+                state.stack.append(state.stack[-_depth])
 
             elif op.startswith('SWAP'):
-                depth = int(op[4:])
-                temp = state.stack[-depth - 1]
-                state.stack[-depth - 1] = state.stack[-1]
+                dpth = int(op[4:])
+                temp = state.stack[-dpth - 1]
+                state.stack[-dpth - 1] = state.stack[-1]
                 state.stack[-1] = temp
 
             elif op == 'POP':
@@ -662,24 +667,22 @@ class SVM:
 
                 if (depth < self.max_depth):
 
-                    logging.debug("JUMP to " + str(jump_addr))
-
                     i = helper.get_instruction_index(disassembly.instruction_list, jump_addr)
 
                     if disassembly.instruction_list[i]['opcode'] == "JUMPDEST":
-                        logging.debug("Current nodes: " + str(self.nodes))
 
-                        if jump_addr not in self.addr_visited:
-                            self.addr_visited.append(jump_addr)
-                            new_state = copy.deepcopy(state)
-                            new_state.pc = i
+                        # if jump_addr not in self.addr_visited:
 
-                            new_node = self._sym_exec(context, new_state, depth + 1, constraints)
-                            self.nodes[new_node.uid] = new_node
+                        # self.addr_visited.append(jump_addr)
+                        new_state = copy.deepcopy(state)
+                        new_state.pc = i
 
-                            self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
+                        new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
+                        self.nodes[new_node.uid] = new_node
+
+                        self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
                     else:
-                        self.trace += "Skipping invalid jump destination"
+                        logging.debug("Skipping invalid jump destination")
 
                 return node
 
@@ -719,7 +722,7 @@ class SVM:
                                     new_constraints = copy.deepcopy(constraints)
                                     new_constraints.append(condition)
 
-                                    new_node = self._sym_exec(context, new_state, depth + 1, new_constraints)
+                                    new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
                                     self.nodes[new_node.uid] = new_node
 
                                     logging.debug("Adding edge with condition: " + str(condition))
@@ -730,7 +733,7 @@ class SVM:
 
                             new_state = copy.deepcopy(state)
 
-                            new_node = self._sym_exec(context, new_state, depth, constraints)
+                            new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
 
                             start_addr = disassembly.instruction_list[state.pc]['address']
                             self.nodes[new_node.uid] = new_node
@@ -753,9 +756,9 @@ class SVM:
                 state.stack.append(10000000)
 
             elif op.startswith('LOG'):
-                depth = int(op[3:])
+                dpth = int(op[3:])
                 state.stack.pop(), state.stack.pop()
-                [state.stack.pop() for x in range(depth)]
+                [state.stack.pop() for x in range(dpth)]
                 # Not supported
 
             elif op == 'CREATE':
@@ -844,7 +847,7 @@ class SVM:
 
                 except AttributeError:
 
-                    logging.info("Encountered start_addrymbolic calldata offset")
+                    logging.info("Encountered symbolic calldata offset")
 
                     # This can still be improved by allowing a mix of symbolic and concrete values in calldata
                     # But for now we simply abort if there's any symbolic values in the mix
@@ -859,7 +862,7 @@ class SVM:
 
                 if (op == 'CALL'):
 
-                    new_node = self._sym_exec(callee_context, State(), 0, constraints)
+                    new_node = self._sym_exec(callee_context, State(), 0, depth=depth+1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
                 elif (op == 'CALLCODE'):
@@ -874,7 +877,7 @@ class SVM:
                     context.caller = context.address
                     context.calldata = calldata
 
-                    new_node = self._sym_exec(callee_context, State(), 0, constraints)
+                    new_node = self._sym_exec(callee_context, State(), 0, depth=depth+1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
                     context.module['disassembly'] = temp_code
@@ -890,7 +893,7 @@ class SVM:
                     context.module['disassembly'] = callee_module['disassembly']
                     context.calldata = calldata
 
-                    new_node = self._sym_exec(callee_context, State(), 0, constraints)
+                    new_node = self._sym_exec(callee_context, State(), 0, depth=depth + 1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
                     context.module['disassembly'] = temp_code
@@ -909,7 +912,7 @@ class SVM:
                 new_state.mem_extend(memoutstart, memoutsz)
                 # new_state.memory[memoutstart:memoutstart + memoutsz] = self.last_returned
 
-                new_node = self._sym_exec(context, new_state, depth, constraints)
+                new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
 
                 self.nodes[new_node.uid] = new_node
 
