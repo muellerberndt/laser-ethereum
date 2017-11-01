@@ -218,7 +218,7 @@ class SVM:
             self.function_state['current_func_addr'] = start_addr
 
         if start_addr in disassembly.addr_to_func:
-            # Start of a function
+            # Enter a new function
 
             function_name = disassembly.addr_to_func[start_addr]
 
@@ -269,10 +269,7 @@ class SVM:
             # Bitwise ops
 
             elif op == 'AND':
-                op1 = state.stack.pop()
-                op2 = state.stack.pop()
-
-                state.stack.append(op1 & op2)
+                state.stack.append(state.stack.pop() & state.stack.pop())
 
             elif op == 'OR':
                 op1 = state.stack.pop()
@@ -440,7 +437,7 @@ class SVM:
                 if context.calldata_type == CalldataType.SYMBOLIC:
                     state.stack.append(BitVec("calldatasize", 256))
                 else:
-                    state.stack.append(BitVecval(len(context.calldata), 256))
+                    state.stack.append(BitVecVal(len(context.calldata), 256))
 
             elif op == 'CALLDATACOPY':
 
@@ -487,40 +484,44 @@ class SVM:
                 op0, op1 = state.stack.pop(), state.stack.pop()
 
                 try:
-                    index, length  = helper.get_concrete_int(op0), helper.get_concrete_int(op1)
+                    index, length = helper.get_concrete_int(op0), helper.get_concrete_int(op1)
 
                 except:
-                    # Cannot hash symbolic values
+                    # Can't access symbolic memory offsets
                     state.stack.append(BitVec("KECCAC_mem_" + str(op0) + ")", 256))
                     continue
 
-                # data = state.memory[index].as_long().to_bytes(32, byteorder='big')
+                try:
+                    data = state.memory[index].as_long().to_bytes(32, byteorder='big')
+                except:
+                    # Can't hash symbolic values                    
+                    state.stack.append(BitVec("KECCAC_mem_" + str(op0) + ")", 256))
+                    continue
 
-                # logging.info("SHA3 Data: " + str(data))
+                logging.info("SHA3 Data: " + str(data))
 
-                # keccac = utils.sha3(utils.bytearray_to_bytestr(data))
+                keccac = utils.sha3(utils.bytearray_to_bytestr(data))
 
-                # logging.info("Hash: " + str(keccac))
+                logging.info("Hash: " + str(keccac))
 
-                # state.stack.append(BitVecVal(int(keccac), 256))
-
-                state.stack.append(BitVec("KECCAC_mem_" + str(index) + ")", 256))
+                state.stack.append(BitVecVal(int(keccac), 256))
 
             elif op == 'GASPRICE':
-                state.stack.append(0)
+                state.stack.append(BitVecVal(1, 256))
 
             elif op == 'CODECOPY':
-                start, s1, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
                 # Not implemented
+                start, s1, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
 
             elif op == 'EXTCODESIZE':
                 addr = state.stack.pop()
                 state.stack.append(BitVec("extcodesize", 256))
 
             elif op == 'EXTCODECOPY':
+                # Not implemented
+
                 addr = state.stack.pop()
                 start, s2, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
-                # Not implemented
 
             elif op == 'BLOCKHASH':
                 state.stack.append(BitVec("blockhash", 256))
@@ -542,24 +543,25 @@ class SVM:
 
             elif op == 'MLOAD':
                 
-                offset = state.stack.pop()
+                op0 = state.stack.pop()
+
+                logging.info("MLOAD MEM: " + str(state.memory))
 
                 try:
-                    offset = helper.get_concrete_int(offset)
+                    offset = helper.get_concrete_int(op0)
                 except AttributeError:
-                    logging.debug("MLOAD from symbolic index. Not supported")
+                    logging.debug("Can't MLOAD from symbolic index")
                     data = BitVec("mem_" + str(offset), 256)
                     continue
 
                 try:   
+                    data = helper.concrete_int_from_bytes(state.memory, offset)
+                except IndexError: # Memory slot not allocated
+                    data = BitVec("mem_" + str(offset), 256)
+                except TypeError: # Symbolic memory
                     data = state.memory[offset]
-                except IndexError: # Memory slot not yet allocated
-                    
-                    data = BitVec("mem_" + str(offset), 25)
-                    state.mem_extend(offset, 1)
-                    state.memory[offset] = data
 
-                logging.debug("Load from memory[" + str(offset) + "]: " + str(data))
+                logging.info("Load from memory[" + str(offset) + "]: " + str(data))
 
                 state.stack.append(data)
 
@@ -572,13 +574,28 @@ class SVM:
                     continue
                            
                 value = state.stack.pop()
-                state.mem_extend(offset, 1)
+                state.mem_extend(offset, 32)
 
-                logging.debug("Store to memory[" + str(offset) + "]: " + str(value))
+                logging.info("Store to memory[" + str(offset) + "]: " + str(value))
 
-                state.memory[offset] = value
+                try:
+                    # Attempt to concretize value
+                    _bytes = helper.concrete_int_to_bytes(value)
+
+                    logging.info("concrete_int_to_bytes returned: " + str(_bytes))
+
+                    i = 0
+
+                    for b in _bytes:
+                        state.memory[offset + i] = _bytes[i]
+                        i += 1
+                except AttributeError:
+                    state.memory[offset] = value
+
+                logging.info("MSTORE mem: " + str(state.memory))
 
             elif op == 'MSTORE8':
+                # Is this ever used?
                 offset, value = state.stack.pop(), state.stack.pop()
 
                 mem_extend(offset, 1)
@@ -746,7 +763,7 @@ class SVM:
                     callee_address = hex(helper.get_concrete_int(to))
                     module = self.modules[callee_address]
                 except AttributeError:
-                    logging.info("Unable to get concrete call address.")
+                    logging.info("Unable to get concrete call address")
                     if self.dynamic_loader is not None:
 
                         logging.info("Contract not loaded, attempting to resolve dependency")
@@ -771,12 +788,13 @@ class SVM:
 
                     if self.dynamic_loader is not None:
 
+                        logging.info("Attempting to load dependency")
+
                         module = self.dynamic_loader.dynld(context.module['address'], callee_address)
 
-                        logging.info("Attempting to load dependency")
                         if module is None:
 
-                            logging.info("No contract code returned, not a contract account?")
+                            logging.info("No  code returned, not a contract account?")
                             ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                             state.stack.append(ret)
                             continue
@@ -803,40 +821,24 @@ class SVM:
 
                     continue
 
-
-                # logging.info("memory: " + str(state.memory))
-                # logging.info("mem offset:" + str(helper.get_concrete_int(meminstart)))
-
-                calldata = []
-
                 # Attempt to write concrete calldata
 
+                logging.info("Meminstart: " + str(meminstart) + ", meminsize : " + str(meminsz))
+
                 try:
-                    calldata_words = state.memory[helper.get_concrete_int(meminstart):helper.get_concrete_int(meminstart+meminsz)]
-
-                    for w in calldata_words:
-
-                        word = helper.get_concrete_int(w)
-
-                        by = word.to_bytes(32, 'big')
-
-                        for b in by:
-                            calldata.append(b)
-
-                        calldata_type = CalldataType.CONCRETE
+                    calldata = state.memory[helper.get_concrete_int(meminstart):helper.get_concrete_int(meminstart+meminsz)]
+                    calldata_type = CalldataType.CONCRETE
 
                 except AttributeError:
 
-                    logging.debug("Encountered symbolic calldata offset, size or value")
+                    logging.info("Encountered symbolic calldata offset")
 
                     # This can still be improved by allowing a mix of symbolic and concrete values in calldata
                     # But for now we simply abort if there's any symbolic values in the mix
 
-                    calldata = []
                     calldata_type = CalldataType.SYMBOLIC
 
                 logging.info("calldata: " + str(calldata))
-                # logging.info("calldatalength: " + str(len(calldata)))
 
                 self.last_caller = context.module['name'] + ":" + str(disassembly.instruction_list[state.pc]['address'])
                 prefix_temp = self.active_node_prefix
@@ -846,7 +848,6 @@ class SVM:
                 if (op == 'CALL'):
                     
                     self.active_node_prefix = callee_module['name'] + ':CALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
-
                     self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0)
 
                 elif (op == 'CALLCODE'):

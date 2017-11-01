@@ -64,6 +64,23 @@ def get_concrete_int(item):
         return simplify(item).as_long()
 
 
+def concrete_int_from_bytes(bytes, start_index):
+
+    _pow = 32
+    val = 0
+
+    for i in range(start_index, start_index + 32):
+        val += bytes[i] ** _pow
+        _pow -= 1
+
+    return val
+
+
+def concrete_int_to_bytes(val):
+
+    return (simplify(val).as_long()).to_bytes(32, byteorder='big')
+
+
 def storage_constraints_for_path(svm, path):
 
     storage_constraints = []
@@ -188,7 +205,6 @@ def satisfy_recursively(svm, node_addr, models = [], visited = []):
                 
         else:
             return False
-
 
 
 def satisfy(svm, node_addr):
