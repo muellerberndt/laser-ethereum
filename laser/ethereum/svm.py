@@ -13,6 +13,8 @@ TT255 = 2 ** 255
 
 MAX_DEPTH = 12
 
+gbl_next_uid = 0
+
 
 class SVMError(Exception):
     pass
@@ -89,6 +91,14 @@ class Node:
         self.states = {}
         self.constraints = constraints
 
+        # Self-assign a unique ID
+
+        global gbl_next_uid
+
+        self.uid = gbl_next_uid
+        gbl_next_uid += 1
+
+
     def __str__(self):
         return str(self.as_dict())
         
@@ -136,7 +146,6 @@ class SVM:
         self.max_depth = max_depth
         self.simplify_model = simplify_model
         self.last_caller = ""
-        self.total_nodes = 0
         self.total_states = 0
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
@@ -180,9 +189,10 @@ class SVM:
 
         logging.debug("Starting SVM execution")
 
-        self.active_node_prefix = self.modules[main_address]['name']
         context = Context(self.modules[main_address])
-        self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(context, State())
+
+        node = self._sym_exec(context, State())
+        self.nodes[node.uid] = node
 
         logging.info("Execution complete, saved " + str(self.total_states) + " states")
 
@@ -201,7 +211,7 @@ class SVM:
             paths = self.find_paths(key)
             self.paths[key] = paths
 
-            logging.info("NODE '" + key + "': " + str(self.nodes[key].as_dict()))
+            logging.info("NODE '" + str(key) + "': " + str(self.nodes[key].as_dict()))
 
 
     def _sym_exec(self, context, state, depth=0, constraints=[]):
@@ -664,9 +674,9 @@ class SVM:
                             new_state.pc = i
 
                             new_node = self._sym_exec(context, new_state, depth + 1, constraints)
-                            self.nodes[self.active_node_prefix + ':' + str(jump_addr)] = new_node
+                            self.nodes[new_node.uid] = new_node
 
-                        self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.active_node_prefix + ":" + str(jump_addr), JumpType.UNCONDITIONAL))
+                            self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
                     else:
                         self.trace += "Skipping invalid jump destination"
 
@@ -711,9 +721,9 @@ class SVM:
                                     new_node = self._sym_exec(context, new_state, depth + 1, new_constraints)
                                     self.nodes[self.active_node_prefix + ':' + str(jump_addr)] = new_node
 
-                                logging.debug("Adding edge with condition: " + str(condition))
+                                    logging.debug("Adding edge with condition: " + str(condition))
 
-                                self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.active_node_prefix + ":" + str(jump_addr), JumpType.CONDITIONAL, condition))
+                                    self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
 
                         if not self.simplify_model:
 
@@ -722,12 +732,12 @@ class SVM:
                             new_node = self._sym_exec(context, new_state, depth, constraints)
 
                             start_addr = disassembly.instruction_list[state.pc]['address']
-                            self.nodes[self.active_node_prefix + ':' + str(start_addr)] = new_node
+                            self.nodes[new_node.uid] = new_node
 
                             if (type(condition) == BoolRef):
-                                self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.active_node_prefix + ":" + str(start_addr), JumpType.CONDITIONAL, Not(condition)))
+                                self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, Not(condition)))
                             else:
-                                self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.active_node_prefix + ":" + str(start_addr), JumpType.CONDITIONAL, condition == 0))                               
+                                self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition == 0))                               
 
                             return node
 
@@ -841,7 +851,7 @@ class SVM:
                     calldata_type = CalldataType.SYMBOLIC
                     calldata = []
 
-                self.last_caller = context.module['name'] + ":" + str(disassembly.instruction_list[state.pc]['address'])
+                self.last_caller = node.uid
                 prefix_temp = self.active_node_prefix
 
                 callee_context = Context(callee_module, calldata = calldata, caller = context.address, origin = context.origin, calldata_type = calldata_type)
@@ -849,7 +859,8 @@ class SVM:
                 if (op == 'CALL'):
                     
                     self.active_node_prefix = callee_module['name'] + ':CALL_from_' + context.module['name'] + '_' + str(disassembly.instruction_list[state.pc]['address'] - 1)
-                    self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0, constraints)
+                    new_node = self._sym_exec(callee_context, State(), 0, constraints)
+                    self.nodes[new_node.uid] = new_node
 
                 elif (op == 'CALLCODE'):
 
@@ -865,7 +876,8 @@ class SVM:
                     context.caller = context.address
                     context.calldata = calldata
 
-                    self.nodes[self.active_node_prefix + ':0'] = self._sym_exec(callee_context, State(), 0, constraints)
+                    new_node = self._sym_exec(callee_context, State(), 0, constraints)
+                    self.nodes[new_node.uid] = new_node
 
                     context.module['disassembly'] = temp_code
                     context.value = temp_value
@@ -882,12 +894,13 @@ class SVM:
                     context.module['disassembly'] = callee_module['disassembly']
                     context.calldata = calldata
 
-                    self.nodes[self.active_node_prefix +':0'] = self._sym_exec(callee_context, State(), 0, constraints)
+                    new_node = self._sym_exec(callee_context, State(), 0, constraints)
+                    self.nodes[new_node.uid] = new_node
 
                     context.module['disassembly'] = temp_code
                     context.calldata = temp_calldata
 
-                self.edges.append(Edge(prefix_temp + ":" + str(node.start_addr), self.active_node_prefix + ':0', JumpType.CALL))
+                self.edges.append(Edge(node.uid, new_node.uid, JumpType.CALL))
                 self.active_node_prefix = prefix_temp
 
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
@@ -903,8 +916,7 @@ class SVM:
 
                 new_node = self._sym_exec(context, new_state, depth, constraints)
 
-                start_addr = disassembly.instruction_list[state.pc]['address']
-                self.nodes[self.active_node_prefix + ':' + str(start_addr)] = new_node
+                self.nodes[new_node.uid] = new_node
 
                 return node
 
@@ -916,8 +928,8 @@ class SVM:
                 except AttributeError:
                     logging.debug("Return with symbolic length or offset. Not supported")
 
-                if len(self.last_caller):
-                    self.edges.append(Edge(self.active_node_prefix + ":" + str(node.start_addr), self.last_caller, JumpType.RETURN))
+                if self.last_caller is not None:
+                    self.edges.append(Edge(node.uid, self.last_caller, JumpType.RETURN))
 
                 return node
 
