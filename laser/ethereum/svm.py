@@ -49,17 +49,17 @@ class State():
 
     def mem_extend(self, start, sz):
 
-        logging.info("mem_externd: " + str(start) + ", " + str(sz))
+        if (start < 4096 and sz < 4096):
 
-        if sz and start + sz > len(self.memory):
+            if sz and start + sz > len(self.memory):
 
-            n_append = start + sz - len(self.memory)
+                n_append = start + sz - len(self.memory)
 
-            while n_append > 0:
-                self.memory.append(0)
-                n_append -= 1
+                while n_append > 0:
+                    self.memory.append(0)
+                    n_append -= 1
 
-            # Deduct gas.. not yet implemented
+                # Deduct gas.. not yet implemented
 
 
 class Context(): 
@@ -530,7 +530,7 @@ class SVM:
 
                 logging.info("Hash: " + str(keccac))
 
-                state.stack.append(BitVecVal(int(keccac), 256))
+                state.stack.append(BitVecVal(helper.concrete_int_from_bytes(keccac, 0), 256))
 
             elif op == 'GASPRICE':
                 state.stack.append(BitVecVal(1, 256))
@@ -570,6 +570,8 @@ class SVM:
             elif op == 'MLOAD':
                 
                 op0 = state.stack.pop()
+
+                logging.info("MLOAD[" + str(op0) + "]")
 
                 try:
                     offset = helper.get_concrete_int(op0)
@@ -613,7 +615,11 @@ class SVM:
                         state.memory[offset + i] = _bytes[i]
                         i += 1
                 except:
-                    state.memory[offset] = value
+                    try:
+                        state.memory[offset] = value
+                    except:
+                        logging.debug("Invalid memory access")
+                        return node
 
 
             elif op == 'MSTORE8':
@@ -724,15 +730,13 @@ class SVM:
                         # Add new node for condition == True
 
                         if instr['opcode'] != "JUMPDEST":
-                            logging.info("Invalid jump destination: " + str(jump_addr))
+                            logging.debug("Invalid jump destination: " + str(jump_addr))
 
                         else:
 
                             # Prune unreachable destinations (if concrete values are used)
 
                             # logging.info("JUMPI condition: " + str(condition))
-
-                            logging.info("CONDITION TYPE:" + str(type(condition)))
 
                             if (type(condition) == bool):
                                 return node

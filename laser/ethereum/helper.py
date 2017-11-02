@@ -64,19 +64,23 @@ def get_concrete_int(item):
     return simplify(item).as_long()
 
 
-def concrete_int_from_bytes(bytes, start_index):
+def concrete_int_from_bytes(_bytes, start_index):
+
+    logging.info("concrete_int_from_bytes " + str(_bytes) + ", " + str(start_index))
 
     _pow = 32
     val = 0
 
     for i in range(start_index, start_index + 32):
-        val += bytes[i] ** _pow
+        val += _bytes[i] ** _pow
         _pow -= 1
 
     return val
 
 
 def concrete_int_to_bytes(val):
+
+    logging.info("concrete_int_to_bytes " + str(bytes) + ", " + str(start_index))
 
     return (simplify(val).as_long()).to_bytes(32, byteorder='big')
 
