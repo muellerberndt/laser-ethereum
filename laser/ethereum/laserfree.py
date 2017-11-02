@@ -1,4 +1,4 @@
-from .modules import unchecked_suicide
+from .modules import unchecked_suicide, unchecked_send
 import logging
 
 def fire(_svm):
@@ -7,4 +7,4 @@ def fire(_svm):
 
     logging.info("Running module [unchecked_suicide]")
 
-    unchecked_suicide.execute(_svm)
+    unchecked_send.execute(_svm)

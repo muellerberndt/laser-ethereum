@@ -439,22 +439,31 @@ class SVM:
 
                 try:
                     offset = helper.get_concrete_int(simplify(op0))
+                except AttributeError:
+                    logging.debug("CALLDATALOAD: Unsupported symbolic index")
+                    state.stack.append(BitVec("calldata_" + str(context.module['name']) + "_" + str(op0), 256))
+                    continue
+
+                try:
+                    b = context.calldata[offset]
+                except IndexError:
+                    logging.debug("Calldata not set, using symbolic variable instead")
+                    state.stack.append(BitVec("calldata_" + str(context.module['name']) + "_" + str(op0), 256))
+                    continue
+
+                if type(b) == int:
+                    # 32 byte concrete value
 
                     val = b''
 
                     for i in range(offset, offset + 32):
-
-                        b = context.calldata[i]
                         val += context.calldata[i].to_bytes(1, byteorder='big')
 
                     state.stack.append(BitVecVal(int.from_bytes(val, byteorder='big'), 256))
 
-                except AttributeError:
-                    logging.debug("CALLDATALOAD: Unsupported symbolic index or calldata value")
-                    state.stack.append(BitVec("calldata_" + str(context.module['name']) + "_" + str(op0), 256))
-                except IndexError:
-                    logging.debug("Calldata not set, using symbolic variable instead")
-                    state.stack.append(BitVec("calldata_" + str(context.module['name']) + "_" + str(op0), 256))
+                else:
+                    # symbolic variable
+                    state.stack.append(b)
                                        
             elif op == 'CALLDATASIZE':
 
