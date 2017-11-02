@@ -66,14 +66,9 @@ def get_concrete_int(item):
 
 def concrete_int_from_bytes(_bytes, start_index):
 
-    logging.info("concrete_int_from_bytes " + str(_bytes) + ", " + str(start_index))
+    b = _bytes[start_index:start_index+32]
 
-    _pow = 32
-    val = 0
-
-    for i in range(start_index, start_index + 32):
-        val += _bytes[i] ** _pow
-        _pow -= 1
+    val = int.from_bytes(b, byteorder='big')
 
     return val
 

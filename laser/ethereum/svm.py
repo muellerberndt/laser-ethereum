@@ -225,7 +225,7 @@ class SVM:
 
         node = Node(context.module['name'], start_addr, constraints)
 
-        logging.info("- Entering block " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
+        logging.debug("- Entering block " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
 
         if start_addr in disassembly.addr_to_func:
@@ -260,7 +260,7 @@ class SVM:
 
             op = instr['opcode']
 
-            logging.debug(op)
+            # logging.info(op)
 
             # logging.debug(str(instr['address']) + " " + instr['opcode'] + str(state.stack))
 
