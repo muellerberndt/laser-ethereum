@@ -49,6 +49,8 @@ class State():
 
     def mem_extend(self, start, sz):
 
+        logging.info("mem_externd: " + str(start) + ", " + str(sz))
+
         if sz and start + sz > len(self.memory):
 
             n_append = start + sz - len(self.memory)
@@ -217,13 +219,14 @@ class SVM:
 
         start_addr = disassembly.instruction_list[state.pc]['address']
 
-        # logging.info("- Entering block " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
-
         if start_addr == 0:
             self.execution_state['current_func'] = "main"
             self.execution_state['current_func_addr'] = start_addr
 
         node = Node(context.module['name'], start_addr, constraints)
+
+        logging.info("- Entering block " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
+
 
         if start_addr in disassembly.addr_to_func:
             # Enter a new function
@@ -256,6 +259,8 @@ class SVM:
             self.total_states += 1
 
             op = instr['opcode']
+
+            logging.debug(op)
 
             # logging.debug(str(instr['address']) + " " + instr['opcode'] + str(state.stack))
 
@@ -309,12 +314,9 @@ class SVM:
                 state.stack.append(TT256M1 - state.stack.pop())
 
             elif op == 'BYTE':
-                s0, s1 = state.stack.pop(), state.stack.pop()
+                s0, s1 = state.stack.pop(), state.stack.pop()  
 
-                if s0 >= 32:
-                    state.stack.append(0)
-                else:
-                    state.stack.append((s1 // 256 ** (31 - s0)) % 256)
+                state.stack.append(BitVecVal(0, 256))
 
             # Arithmetics
 
@@ -450,10 +452,10 @@ class SVM:
 
                 except AttributeError:
                     logging.debug("CALLDATALOAD: Unsupported symbolic index or calldata value")
-                    state.stack.append(BitVec("calldata_" + str(op0), 256))
+                    state.stack.append(BitVec("calldata_" + str(context.module['name']) + "_" + str(op0), 256))
                 except IndexError:
                     logging.debug("Calldata not set, using symbolic variable instead")
-                    state.stack.append(BitVec("calldata_" + str(op0), 256))
+                    state.stack.append(BitVec("calldata_" + str(context.module['name']) + "_" + str(op0), 256))
                                        
             elif op == 'CALLDATASIZE':
 
@@ -589,13 +591,14 @@ class SVM:
 
             elif op == 'MSTORE':
 
+                op0, value = state.stack.pop(), state.stack.pop()
+
                 try:
-                    offset = helper.get_concrete_int(state.stack.pop())
+                    offset = helper.get_concrete_int(op0)
                 except AttributeError:
                     logging.debug("MSTORE to symbolic index. Not supported")
                     continue
-                           
-                value = state.stack.pop()
+
                 state.mem_extend(offset, 32)
 
                 logging.debug("MSTORE to mem[" + str(offset) + "]: " + str(value))
@@ -609,14 +612,21 @@ class SVM:
                     for b in _bytes:
                         state.memory[offset + i] = _bytes[i]
                         i += 1
-                except AttributeError:
+                except:
                     state.memory[offset] = value
+
 
             elif op == 'MSTORE8':
                 # Is this ever used?
-                offset, value = state.stack.pop(), state.stack.pop()
+                op0, value = state.stack.pop(), state.stack.pop()
 
-                mem_extend(offset, 1)
+                try:
+                    offset = helper.get_concrete_int(op0)
+                except AttributeError:
+                    logging.debug("MSTORE to symbolic index. Not supported")
+                    continue
+
+                state.mem_extend(offset, 1)
 
                 state.memory[offset] = value % 256
 
@@ -705,8 +715,6 @@ class SVM:
 
                     i = helper.get_instruction_index(disassembly.instruction_list, jump_addr)
 
-                    logging.debug("JUMPI to " + str(jump_addr))
-
                     if not i:
                         logging.debug("Invalid jump destination: " + str(jump_addr))
 
@@ -716,10 +724,18 @@ class SVM:
                         # Add new node for condition == True
 
                         if instr['opcode'] != "JUMPDEST":
-                            logging.debug("Invalid jump destination: " + str(jump_addr))
+                            logging.info("Invalid jump destination: " + str(jump_addr))
+
                         else:
 
                             # Prune unreachable destinations (if concrete values are used)
+
+                            # logging.info("JUMPI condition: " + str(condition))
+
+                            logging.info("CONDITION TYPE:" + str(type(condition)))
+
+                            if (type(condition) == bool):
+                                return node
 
                             if str(simplify(condition)) != "False":
 
@@ -736,28 +752,26 @@ class SVM:
                                     new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=new_constraints)
                                     self.nodes[new_node.uid] = new_node
 
-                                    logging.debug("Adding edge with condition: " + str(condition))
-
                                     self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
 
-                        if not self.simplify_model:
+                        #if not self.simplify_model:
 
-                            new_state = copy.deepcopy(state)
+                        new_state = copy.deepcopy(state)
 
-                            new_constraints = copy.deepcopy(constraints)
-                            new_constraints.append(Not(condition))
+                        if (type(condition) == BoolRef):
+                            negated = Not(condition)
+                        else:
+                            negated = condition == 0
 
-                            new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=new_constraints)
+                        new_constraints = copy.deepcopy(constraints)
+                        new_constraints.append(negated)
 
-                            start_addr = disassembly.instruction_list[state.pc]['address']
-                            self.nodes[new_node.uid] = new_node
+                        new_node = self._sym_exec(context, new_state, depth=depth, constraints=new_constraints)
+                        self.nodes[new_node.uid] = new_node
 
-                            if (type(condition) == BoolRef):
-                                self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, Not(condition)))
-                            else:
-                                self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition == 0))                               
+                        self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, negated))
 
-                            return node
+                        return node
 
 
             elif op == 'PC':
@@ -916,10 +930,10 @@ class SVM:
 
                 new_state = copy.deepcopy(state)
 
-                memoutstart = helper.get_concrete_int(memoutstart)
-                memoutsz = helper.get_concrete_int(memoutsz)
+                # memoutstart = helper.get_concrete_int(memoutstart)
+                # memoutsz = helper.get_concrete_int(memoutsz
 
-                new_state.mem_extend(memoutstart, memoutsz)
+                # new_state.mem_extend(memoutstart, memoutsz)
                 # new_state.memory[memoutstart:memoutstart + memoutsz] = self.last_returned
 
                 new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)

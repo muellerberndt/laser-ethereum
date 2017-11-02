@@ -1,11 +1,10 @@
-from . import svm
-from .modules import unchecked_send
+from .modules import unchecked_suicide
 import logging
 
 def fire(_svm):
 
     logging.info("Firing lasers!")
 
-    logging.info("Running module [unchecked_send]")
+    logging.info("Running module [unchecked_suicide]")
 
-    unchecked_send.execute(_svm)
+    unchecked_suicide.execute(_svm)
