@@ -90,6 +90,7 @@ class Node:
         self.instruction_list = []
         self.states = {}
         self.constraints = constraints
+        self.function_name = "unknown"
 
         # Self-assign a unique ID
 
@@ -141,8 +142,7 @@ class SVM:
         self.addr_visited = []
         self.edges = []
         self.paths = {}
-        self.function_state = {}
-        self.trace = ""
+        self.execution_state = {}
         self.max_depth = max_depth
         self.simplify_model = simplify_model
         self.last_call_address = None
@@ -150,6 +150,8 @@ class SVM:
         self.total_states = 0
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
+
+        logging.info("Initialized with dynamic loader: " + str(dynamic_loader))
 
 
     def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
@@ -215,26 +217,28 @@ class SVM:
 
         start_addr = disassembly.instruction_list[state.pc]['address']
 
-        node = Node(context.module['name'], start_addr, constraints)
-
         # logging.info("- Entering block " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
         if start_addr == 0:
-            self.function_state['current_func'] = "prologue"
-            self.function_state['current_func_addr'] = start_addr
+            self.execution_state['current_func'] = "main"
+            self.execution_state['current_func_addr'] = start_addr
+
+        node = Node(context.module['name'], start_addr, constraints)
 
         if start_addr in disassembly.addr_to_func:
             # Enter a new function
 
             function_name = disassembly.addr_to_func[start_addr]
 
-            self.function_state['current_func'] = function_name
+            self.execution_state['current_func'] = function_name
 
             logging.info("- Entering function " + function_name)
 
             node.instruction_list.append({'opcode': function_name, 'address': disassembly.instruction_list[state.pc]['address']})
 
             state.pc += 1
+
+        node.function_name = self.execution_state['current_func']
 
         halt = False
 
@@ -433,17 +437,19 @@ class SVM:
                 op0 = state.stack.pop()
 
                 try:
-                    offset = helper.get_concrete_int(op0)
+                    offset = helper.get_concrete_int(simplify(op0))
 
                     val = b''
 
                     for i in range(offset, offset + 32):
+
+                        b = context.calldata[i]
                         val += context.calldata[i].to_bytes(1, byteorder='big')
 
                     state.stack.append(BitVecVal(int.from_bytes(val, byteorder='big'), 256))
 
                 except AttributeError:
-                    logging.debug("CALLDATALOAD: Unsupported symbolic index at " + str(disassembly.instruction_list[state.pc]['address']))
+                    logging.debug("CALLDATALOAD: Unsupported symbolic index or calldata value")
                     state.stack.append(BitVec("calldata_" + str(op0), 256))
                 except IndexError:
                     logging.debug("Calldata not set, using symbolic variable instead")
@@ -563,8 +569,6 @@ class SVM:
                 
                 op0 = state.stack.pop()
 
-                logging.debug("MLOAD MEM: " + str(state.memory))
-
                 try:
                     offset = helper.get_concrete_int(op0)
                 except AttributeError:
@@ -594,7 +598,7 @@ class SVM:
                 value = state.stack.pop()
                 state.mem_extend(offset, 32)
 
-                logging.debug("Store to memory[" + str(offset) + "]: " + str(value))
+                logging.debug("MSTORE to mem[" + str(offset) + "]: " + str(value))
 
                 try:
                     # Attempt to concretize value
@@ -607,8 +611,6 @@ class SVM:
                         i += 1
                 except AttributeError:
                     state.memory[offset] = value
-
-                logging.debug("MSTORE mem: " + str(state.memory))
 
             elif op == 'MSTORE8':
                 # Is this ever used?
@@ -665,8 +667,6 @@ class SVM:
                 except AttributeError:
                     logging.info("Invalid jump argument (symbolic address) at " + str(disassembly.instruction_list[state.pc]['address']))
                     return node
-
-                logging.info(str(disassembly.instruction_list[state.pc]['address']) + ": JUMP: " + str(jump_addr))
 
                 if (depth < self.max_depth):
 
@@ -795,7 +795,7 @@ class SVM:
                     logging.info("Unable to get concrete call address")
                     if self.dynamic_loader is not None:
 
-                        logging.info("Contract not loaded, attempting to resolve dependency")
+                        logging.info("Attempting to resolve dependency")
                         module = self.dynamic_loader.dynld(context.module['address'], str(simplify(to)))
 
                         if module is None:
@@ -807,7 +807,7 @@ class SVM:
                             continue
 
                     else:
-                        logging.info("Contract not loaded and dynamic loader unavailable. Skipping call")
+                        logging.info("Dynamic loader unavailable. Skipping call")
                         ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                         state.stack.append(ret)
 
@@ -861,11 +861,7 @@ class SVM:
 
                 except AttributeError:
 
-                    logging.info("Encountered symbolic calldata offset")
-
-                    # This can still be improved by allowing a mix of symbolic and concrete values in calldata
-                    # But for now we simply abort if there's any symbolic values in the mix
-
+                    logging.info("Unsupported symbolic calldata offset")
                     calldata_type = CalldataType.SYMBOLIC
                     calldata = []
 

@@ -61,8 +61,7 @@ def get_concrete_int(item):
     if (type(item) == BitVecNumRef):
         return item.as_long()
 
-    if (type(item) == BitVecRef):
-        return simplify(item).as_long()
+    return simplify(item).as_long()
 
 
 def concrete_int_from_bytes(bytes, start_index):
