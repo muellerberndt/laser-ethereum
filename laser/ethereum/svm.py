@@ -227,7 +227,6 @@ class SVM:
 
         logging.debug("- Entering block " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
-
         if start_addr in disassembly.addr_to_func:
             # Enter a new function
 
@@ -235,7 +234,7 @@ class SVM:
 
             self.execution_state['current_func'] = function_name
 
-            logging.info("- Entering function " + function_name)
+            logging.info("- Entering function " + context.module['name'] + ":" + function_name)
 
             node.instruction_list.append({'opcode': function_name, 'address': disassembly.instruction_list[state.pc]['address']})
 
@@ -262,7 +261,7 @@ class SVM:
 
             # logging.info(op)
 
-            # logging.debug(str(instr['address']) + " " + instr['opcode'] + str(state.stack))
+            logging.debug(str(instr['address']) + " " + op)
 
             # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
 
