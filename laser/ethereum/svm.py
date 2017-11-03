@@ -138,7 +138,7 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, max_depth=MAX_DEPTH, simplify=True, dynamic_loader=None):
+    def __init__(self, modules, max_depth=MAX_DEPTH, simplified=True, dynamic_loader=None):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = []
@@ -146,7 +146,7 @@ class SVM:
         self.paths = {}
         self.execution_state = {}
         self.max_depth = max_depth
-        self.simplify_model = simplify_model
+        self.simplified = simplified
         self.last_call_address = None
         self.pending_returns = {}
         self.total_states = 0
@@ -766,7 +766,7 @@ class SVM:
 
                                     self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
 
-                        #if not self.simplify_model:
+                        #if not self.simplified:
 
                         new_state = copy.deepcopy(state)
 
