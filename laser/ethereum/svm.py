@@ -138,7 +138,7 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, max_depth=MAX_DEPTH, simplify_model=True, dynamic_loader=None):
+    def __init__(self, modules, max_depth=MAX_DEPTH, simplify=True, dynamic_loader=None):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = []
