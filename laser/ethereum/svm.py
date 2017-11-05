@@ -231,7 +231,6 @@ class SVM:
             # Enter a new function
 
             function_name = disassembly.addr_to_func[start_addr]
-
             self.execution_state['current_func'] = function_name
 
             logging.info("- Entering function " + context.module['name'] + ":" + function_name)
@@ -248,24 +247,26 @@ class SVM:
 
         while not halt:
 
-            # logging.info("- Entering instruction: " + str(disassembly.instruction_list[state.pc]))
+            # logging.info("- Executing instruction: " + str(disassembly.instruction_list[state.pc]))
 
             instr = disassembly.instruction_list[state.pc]
 
-            node.instruction_list.append(instr)
+            # Save instruction and state
 
-            node.states[disassembly.instruction_list[state.pc]['address']] = copy.deepcopy(state)
+            node.instruction_list.append(instr)
+            node.states[instr['address']] = state
+
+            state = copy.deepcopy(state)
             self.total_states += 1
+            state.pc += 1
 
             op = instr['opcode']
 
             # logging.info(op)
 
-            logging.debug(str(instr['address']) + " " + op)
+            # logging.debug(str(instr['address']) + " " + op)
 
             # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
-
-            state.pc += 1
 
             # stack ops
 
@@ -477,19 +478,38 @@ class SVM:
 
                 try:
                     mstart = helper.get_concrete_int(op0)
+                except:
+                    logging.info("Unsupported symbolic memory offset in CALLDATACOPY")
+                    continue
+
+                try:
                     dstart = helper.get_concrete_int(op1)
+                except:
+                    logging.info("Unsupported symbolic calldata offset in CALLDATACOPY")
+                    state.mem_extend(mstart, 1)
+                    state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_cpy", 256)
+                    continue
+
+                try:
                     size = helper.get_concrete_int(op2)
+                except:
+                    logging.info("Unsupported symbolic size in CALLDATACOPY")
+                    state.mem_extend(mstart, 1)
+                    state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_" + str(dstart), 256)
+                    continue
 
-                    state.mem_extend(mstart, size)
+                state.mem_extend(mstart, size)
 
+                try:
                     i_data = context.calldata[dstart]
 
                     for i in range(mstart, mstart + size):
                         state.memory[i] = context.calldata[i_data]
                         i_data += 1
                 except:
-                    # Calldata is symbolic. Do nothing
-                    continue
+                    logging.info("Exception copying calldata to memory")
+                    state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_" + str(dstart), 256)
+                    # continue
 
             # Control flow
 
@@ -628,6 +648,8 @@ class SVM:
                     except:
                         logging.debug("Invalid memory access")
                         return node
+
+                # logging.debug("MEM: " + str(state.memory))
 
 
             elif op == 'MSTORE8':
@@ -942,14 +964,13 @@ class SVM:
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                 state.stack.append(ret)
 
-                new_state = copy.deepcopy(state)
-
                 # memoutstart = helper.get_concrete_int(memoutstart)
                 # memoutsz = helper.get_concrete_int(memoutsz
 
                 # new_state.mem_extend(memoutstart, memoutsz)
                 # new_state.memory[memoutstart:memoutstart + memoutsz] = self.last_returned
 
+                new_state = copy.deepcopy(state)
                 new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
 
                 self.nodes[new_node.uid] = new_node
