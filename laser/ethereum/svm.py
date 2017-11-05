@@ -32,7 +32,7 @@ class CalldataType(Enum):
     SYMBOLIC = 2
 
 
-class State(): 
+class State():
 
     def __init__(self, gas=1000000):
         self.storage = {}
@@ -468,7 +468,7 @@ class SVM:
             elif op == 'CALLDATASIZE':
 
                 if context.calldata_type == CalldataType.SYMBOLIC:
-                    state.stack.append(BitVec("calldatasize", 256))
+                    state.stack.append(BitVec("calldatasize_" + context.module['name'], 256))
                 else:
                     state.stack.append(BitVecVal(len(context.calldata), 256))
 
@@ -532,11 +532,11 @@ class SVM:
                     state.stack.append(BitVec("KECCAC_mem_" + str(op0) + ")", 256))
                     continue
 
-                logging.info("SHA3 Data: " + str(data))
+                logging.debug("SHA3 Data: " + str(data))
 
                 keccac = utils.sha3(utils.bytearray_to_bytestr(data))
 
-                logging.info("Hash: " + str(keccac))
+                logging.debug("Hash: " + str(keccac))
 
                 state.stack.append(BitVecVal(helper.concrete_int_from_bytes(keccac, 0), 256))
 
@@ -579,7 +579,7 @@ class SVM:
                 
                 op0 = state.stack.pop()
 
-                logging.info("MLOAD[" + str(op0) + "]")
+                logging.debug("MLOAD[" + str(op0) + "]")
 
                 try:
                     offset = helper.get_concrete_int(op0)
@@ -807,9 +807,11 @@ class SVM:
                 state.stack.append(0)
 
             elif op in ('CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL'):
+
                 if op in ('CALL', 'CALLCODE'):
                     gas, to, value, meminstart, meminsz, memoutstart, memoutsz = \
                         state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
+
                 else:
                     gas, to, meminstart, meminsz, memoutstart, memoutsz = \
                         state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
@@ -903,7 +905,7 @@ class SVM:
 
                 elif (op == 'CALLCODE'):
 
-                    temp_code = context.module['disassembly']
+                    temp_module = context.module
                     temp_value = context.value
                     temp_caller = context.caller
                     temp_calldata = context.calldata
@@ -913,26 +915,26 @@ class SVM:
                     context.caller = context.address
                     context.calldata = calldata
 
-                    new_node = self._sym_exec(callee_context, State(), depth=depth+1, constraints=constraints)
+                    new_node = self._sym_exec(context, State(), depth=depth+1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
-                    context.module['disassembly'] = temp_code
+                    context.module = temp_module
                     context.value = temp_value
                     context.caller = temp_caller
                     context.calldata = temp_calldata
 
                 elif (op == 'DELEGATECALL'):
 
-                    temp_code = context.module['disassembly']
+                    temp_module = context.module
                     temp_calldata = context.calldata
 
-                    context.module['disassembly'] = callee_module['disassembly']
+                    context.module = callee_module
                     context.calldata = calldata
 
-                    new_node = self._sym_exec(callee_context, State(), depth=depth + 1, constraints=constraints)
+                    new_node = self._sym_exec(context, State(), depth=depth + 1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
-                    context.module['disassembly'] = temp_code
+                    context.module = temp_module
                     context.calldata = temp_calldata
 
                 self.edges.append(Edge(node.uid, new_node.uid, JumpType.CALL))
