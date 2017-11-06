@@ -261,8 +261,8 @@ class SVM:
 
             op = instr['opcode']
 
-            # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
-            # Uncomment this in emergencies only, slows down execution significantly.
+            logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
+            # slows down execution significantly.
 
             # stack ops
 
@@ -284,16 +284,24 @@ class SVM:
                 state.stack[-1] = temp
 
             elif op == 'POP':
-                state.stack.pop()
+                try:
+                    state.stack.pop()
+                except IndexError: # Stack underflow
+                    return node
 
             # Bitwise ops
 
             elif op == 'AND':
-                state.stack.append(state.stack.pop() & state.stack.pop())
+                try:
+                    state.stack.append(state.stack.pop() & state.stack.pop())
+                except IndexError: # Stack underflow
+                    return node
 
             elif op == 'OR':
-                op1 = state.stack.pop()
-                op2 = state.stack.pop()
+                try:
+                    op1, op2 = state.stack.pop(), state.stack.pop()
+                except IndexError: # Stack underflow
+                    return node
 
                 if (type(op1) == BoolRef):
                     op1 = If(op1, BitVecVal(1,256), BitVecVal(0,256))
@@ -367,6 +375,13 @@ class SVM:
 
             elif op == 'SIGNEXTEND':
                 s0, s1 = state.stack.pop(), state.stack.pop()
+
+                try:
+                    s0 = get_concrete_int(s0)
+                    s1 = get_concrete_int(s1)
+                except:
+                    continue
+
                 if s0 <= 31:
                     testbit = s0 * 8 + 7
                     if s1 & (1 << testbit):
@@ -453,11 +468,14 @@ class SVM:
 
                     val = b''
 
-                    for i in range(offset, offset + 32):
-                        val += context.calldata[i].to_bytes(1, byteorder='big')
+                    try:
+                        for i in range(offset, offset + 32):
+                            val += context.calldata[i].to_bytes(1, byteorder='big')
 
-                    state.stack.append(BitVecVal(int.from_bytes(val, byteorder='big'), 256))
+                        state.stack.append(BitVecVal(int.from_bytes(val, byteorder='big'), 256))
 
+                    except:
+                        state.stack.append(b) 
                 else:
                     # symbolic variable
                     state.stack.append(b)
@@ -475,13 +493,13 @@ class SVM:
                 try:
                     mstart = helper.get_concrete_int(op0)
                 except:
-                    logging.info("Unsupported symbolic memory offset in CALLDATACOPY")
+                    logging.debug("Unsupported symbolic memory offset in CALLDATACOPY")
                     continue
 
                 try:
                     dstart = helper.get_concrete_int(op1)
                 except:
-                    logging.info("Unsupported symbolic calldata offset in CALLDATACOPY")
+                    logging.debug("Unsupported symbolic calldata offset in CALLDATACOPY")
                     state.mem_extend(mstart, 1)
                     state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_cpy", 256)
                     continue
@@ -489,23 +507,25 @@ class SVM:
                 try:
                     size = helper.get_concrete_int(op2)
                 except:
-                    logging.info("Unsupported symbolic size in CALLDATACOPY")
+                    logging.debug("Unsupported symbolic size in CALLDATACOPY")
                     state.mem_extend(mstart, 1)
                     state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_" + str(dstart), 256)
                     continue
 
-                state.mem_extend(mstart, size)
+                if size > 0:
 
-                try:
-                    i_data = context.calldata[dstart]
+                    state.mem_extend(mstart, size)
 
-                    for i in range(mstart, mstart + size):
-                        state.memory[i] = context.calldata[i_data]
-                        i_data += 1
-                except:
-                    logging.info("Exception copying calldata to memory")
-                    state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_" + str(dstart), 256)
-                    # continue
+                    try:
+                        i_data = context.calldata[dstart]
+
+                        for i in range(mstart, mstart + size):
+                            state.memory[i] = context.calldata[i_data]
+                            i_data += 1
+                    except:
+                        logging.debug("Exception copying calldata to memory")
+                        state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_" + str(dstart), 256)
+                        # continue
 
             # Control flow
 
@@ -535,7 +555,6 @@ class SVM:
 
                 try:
                     index, length = helper.get_concrete_int(op0), helper.get_concrete_int(op1)
-                    logging.info("SHA3 index: " +str(index) + ", length: " + str(length))
 
                 except:
                     # Can't access symbolic memory offsets
@@ -705,7 +724,7 @@ class SVM:
                 try:
                     jump_addr = helper.get_concrete_int(state.stack.pop())
                 except AttributeError:
-                    logging.info("Invalid jump argument (symbolic address) at " + str(disassembly.instruction_list[state.pc]['address']))
+                    logging.info("Invalid jump argument (symbolic address)")
                     return node
 
                 if (depth < self.max_depth):
@@ -728,7 +747,7 @@ class SVM:
 
                         self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
                     else:
-                        logging.info("Skipping JUMP to invalid destination.")
+                        logging.info("Skipping JUMP to invalid destination (not JUMPDEST).")
 
                 return node
 
@@ -760,25 +779,33 @@ class SVM:
 
                             # Prune unreachable destinations (if concrete values are used)
 
+
                             if (type(condition) == bool):
                                 return node
 
-                            if str(simplify(condition)) != "False":
+                            elif (type(condition) == BoolRef):
 
-                                if jump_addr not in self.addr_visited:
+                                if str(simplify(condition)) != "False":
 
-                                    self.addr_visited.append(jump_addr)
+                                        if jump_addr not in self.addr_visited:
 
-                                    new_state = copy.deepcopy(state)
-                                    new_state.pc = i
+                                            self.addr_visited.append(jump_addr)
 
-                                    new_constraints = copy.deepcopy(constraints)
-                                    new_constraints.append(condition)
+                                            new_state = copy.deepcopy(state)
+                                            new_state.pc = i
 
-                                    new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=new_constraints)
-                                    self.nodes[new_node.uid] = new_node
+                                            new_constraints = copy.deepcopy(constraints)
+                                            new_constraints.append(condition)
 
-                                    self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
+                                            new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=new_constraints)
+                                            self.nodes[new_node.uid] = new_node
+
+                                            self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
+
+                            else:
+                                logging.debug("Invalid condition: " + str(condition) + "(type " + str(type(condition)) + ")")
+
+                                continue
 
                         #if not self.simplified:
 
@@ -894,8 +921,6 @@ class SVM:
 
                 # Attempt to write concrete calldata
 
-                logging.info("Meminstart: " + str(meminstart) + ", meminsize : " + str(meminsz))
-
                 try:
                     calldata = state.memory[helper.get_concrete_int(meminstart):helper.get_concrete_int(meminstart+meminsz)]
                     calldata_type = CalldataType.CONCRETE
@@ -920,12 +945,12 @@ class SVM:
                 elif (op == 'CALLCODE'):
 
                     temp_module = context.module
-                    temp_value = context.value
+                    temp_callvalue = context.callvalue
                     temp_caller = context.caller
                     temp_calldata = context.calldata
 
-                    context.module['disassembly']  = callee_module['disassembly']
-                    context.value = value
+                    context.module = callee_module
+                    context.callvalue = value
                     context.caller = context.address
                     context.calldata = calldata
 
@@ -933,7 +958,7 @@ class SVM:
                     self.nodes[new_node.uid] = new_node
 
                     context.module = temp_module
-                    context.value = temp_value
+                    context.callvalue = temp_callvalue
                     context.caller = temp_caller
                     context.calldata = temp_calldata
 

@@ -36,7 +36,7 @@ def get_trace_line(instr, state):
 
 	stack = str(state.stack[::-1])
 
-	stack = re.sub("(\d+)",	lambda m: hex(int(m.group(1))), stack)
+	# stack = re.sub("(\d+)",	lambda m: hex(int(m.group(1))), stack)
 	stack = re.sub("\n", "", stack)
 
 	return str(instr['address']) + " " + instr['opcode'] + "\tSTACK: " + stack
@@ -66,6 +66,7 @@ def get_concrete_int(item):
 
 def concrete_int_from_bytes(_bytes, start_index):
 
+    # logging.debug("-- concrete_int_from_bytes: " + str(_bytes[start_index:start_index+32]))
     b = _bytes[start_index:start_index+32]
 
     val = int.from_bytes(b, byteorder='big')
@@ -76,6 +77,10 @@ def concrete_int_from_bytes(_bytes, start_index):
 def concrete_int_to_bytes(val):
 
     # logging.debug("concrete_int_to_bytes " + str(val))
+
+    if (type(val) == int):
+        return val.to_bytes(32, byteorder='big')
+
 
     return (simplify(val).as_long()).to_bytes(32, byteorder='big')
 
