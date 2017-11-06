@@ -2,6 +2,7 @@ from laser.ethereum import helper
 from ethereum import utils
 from enum import Enum
 from z3 import *
+import binascii
 import copy
 import logging
 import sha3
@@ -539,6 +540,7 @@ class SVM:
 
                 try:
                     index, length = helper.get_concrete_int(op0), helper.get_concrete_int(op1)
+                    logging.info("SHA3 index: " +str(index) + ", length: " + str(length))
 
                 except:
                     # Can't access symbolic memory offsets
@@ -546,17 +548,23 @@ class SVM:
                     continue
 
                 try:
-                    data = state.memory[index].as_long().to_bytes(32, byteorder='big')
+                    data = b''
+
+                    for i in range(0, length):
+                        data += helper.get_concrete_int(state.memory[i]).to_bytes(1, byteorder='big')
+                        i += 1 
+                
                 except:
-                    # Can't hash symbolic values                    
+                    # Can't hash symbolic values
                     state.stack.append(BitVec("KECCAC_mem_" + str(op0) + ")", 256))
                     continue
+                
 
                 logging.debug("SHA3 Data: " + str(data))
 
                 keccac = utils.sha3(utils.bytearray_to_bytestr(data))
 
-                logging.debug("Hash: " + str(keccac))
+                logging.debug("Hash: " + str(binascii.hexlify(keccac)))
 
                 state.stack.append(BitVecVal(helper.concrete_int_from_bytes(keccac, 0), 256))
 
@@ -631,7 +639,7 @@ class SVM:
 
                 state.mem_extend(offset, 32)
 
-                logging.debug("MSTORE to mem[" + str(offset) + "]: " + str(value))
+                logging.info("MSTORE to mem[" + str(offset) + "]: " + str(value))
 
                 try:
                     # Attempt to concretize value
@@ -642,6 +650,7 @@ class SVM:
                     for b in _bytes:
                         state.memory[offset + i] = _bytes[i]
                         i += 1
+
                 except:
                     try:
                         state.memory[offset] = value

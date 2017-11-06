@@ -75,7 +75,7 @@ def concrete_int_from_bytes(_bytes, start_index):
 
 def concrete_int_to_bytes(val):
 
-    logging.info("concrete_int_to_bytes " + str(bytes) + ", " + str(start_index))
+    logging.info("concrete_int_to_bytes " + str(val))
 
     return (simplify(val).as_long()).to_bytes(32, byteorder='big')
 
