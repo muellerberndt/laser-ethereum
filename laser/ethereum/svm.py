@@ -248,8 +248,6 @@ class SVM:
 
         while not halt:
 
-            # logging.info("- Executing instruction: " + str(disassembly.instruction_list[state.pc]))
-
             instr = disassembly.instruction_list[state.pc]
 
             # Save instruction and state
@@ -263,11 +261,8 @@ class SVM:
 
             op = instr['opcode']
 
-            # logging.info(op)
-
-            # logging.debug(str(instr['address']) + " " + op)
-
             # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
+            # Uncomment this in emergencies only, slows down execution significantly.
 
             # stack ops
 
@@ -639,7 +634,7 @@ class SVM:
 
                 state.mem_extend(offset, 32)
 
-                logging.info("MSTORE to mem[" + str(offset) + "]: " + str(value))
+                logging.debug("MSTORE to mem[" + str(offset) + "]: " + str(value))
 
                 try:
                     # Attempt to concretize value
@@ -699,21 +694,11 @@ class SVM:
 
                 logging.debug("Write to storage[" + str(index) + "] at node " + str(start_addr))
 
-                if type(index) == BitVecRef:
-                    # SSTORE to hash offset
-
-                    k = sha3.keccak_512()
-                    k.update(bytes(str(index), 'utf-8'))
-                    index = k.hexdigest()[:8]
-
-                    state.storage[index] = value
-                else:
-                    index = str(index)
-
                 try:
-                    state.storage[index]
+                    state.storage[index] = value
                 except KeyError:
-                    state.storage[index] = BitVec("storage_" + str(index), 256)
+                    logging.debug("Error writing to storage: Invalid index")
+                    continue
 
             elif op == 'JUMP':
 
@@ -774,8 +759,6 @@ class SVM:
                         else:
 
                             # Prune unreachable destinations (if concrete values are used)
-
-                            # logging.info("JUMPI condition: " + str(condition))
 
                             if (type(condition) == bool):
                                 return node
@@ -1010,4 +993,3 @@ class SVM:
 
             elif op == 'INVALID':
                 return node
-
