@@ -261,7 +261,7 @@ class SVM:
 
             op = instr['opcode']
 
-            # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
+            logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
             # slows down execution significantly.
 
             # stack ops
