@@ -12,7 +12,7 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 24
+MAX_DEPTH = 16
 MAX_REVISIT_ADDR = 4
 
 gbl_next_uid = 0
@@ -156,8 +156,7 @@ class SVM:
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
 
-        logging.info("Initialized with dynamic loader: " + str(dynamic_loader))
-        logging.info("Simplified: " + str(self.simplified))
+        logging.info("SVM initialized with dynamic loader: " + str(dynamic_loader))
 
 
     def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
@@ -251,7 +250,11 @@ class SVM:
 
         while not halt:
 
-            instr = disassembly.instruction_list[state.pc]
+            try:
+                instr = disassembly.instruction_list[state.pc]
+            except IndexError:
+                logging.debug("Invalid PC")
+                return node
 
             # Save instruction and state
 
@@ -276,7 +279,10 @@ class SVM:
             elif op.startswith('DUP'):
                 dpth = int(op[3:])
 
-                state.stack.append(state.stack[-dpth])
+                try:
+                    state.stack.append(state.stack[-dpth])
+                except:
+                    return node
 
             elif op.startswith('SWAP'):
 
@@ -731,19 +737,17 @@ class SVM:
                 try:
                     jump_addr = helper.get_concrete_int(state.stack.pop())
                 except AttributeError:
-                    logging.info("Invalid jump argument (symbolic address)")
+                    logging.debug("Invalid jump argument (symbolic address)")
                     return node
                 except IndexError: # Stack Underflow
                     return node
-
-                logging.info("JUMP")
 
                 if (depth < self.max_depth):
 
                     i = helper.get_instruction_index(disassembly.instruction_list, jump_addr)
 
                     if i is None:
-                        logging.info("JUMP to invalid address")
+                        logging.debug("JUMP to invalid address")
                         return node
 
                     opcode = disassembly.instruction_list[i]['opcode']
@@ -765,11 +769,11 @@ class SVM:
 
                             self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
                         else:
-                            logging.info("JUMP target limit reached (possible loop)")         
+                            logging.debug("JUMP target limit reached (possible loop)")         
 
                             return node         
                     else:
-                        logging.info("Skipping JUMP to invalid destination (not JUMPDEST): " + str(jump_addr))
+                        logging.debug("Skipping JUMP to invalid destination (not JUMPDEST): " + str(jump_addr))
 
                         return node
 
@@ -779,7 +783,7 @@ class SVM:
                 try:
                     jump_addr = helper.get_concrete_int(op0)
                 except:
-                    logging.info("Skipping JUMPI to invalid destination.")
+                    logging.debug("Skipping JUMPI to invalid destination.")
                     return node
 
                 if (depth < self.max_depth):
@@ -836,7 +840,7 @@ class SVM:
 
                                     else:
 
-                                        logging.info("JUMP target limit reached (possible loop)")         
+                                        logging.debug("JUMP target limit reached (possible loop)")         
 
                                         continue                                              
 
@@ -1042,6 +1046,8 @@ class SVM:
 
                 if self.last_call_address is not None:
                     self.pending_returns[self.last_call_address].append(node.uid)
+
+                state.stack.append(BitVec("retval", 256))
 
                 return node
 
