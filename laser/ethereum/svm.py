@@ -12,7 +12,8 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 16
+MAX_DEPTH = 24
+MAX_REVISIT_ADDR = 4
 
 gbl_next_uid = 0
 
@@ -139,22 +140,24 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, max_depth=MAX_DEPTH, simplified=True, dynamic_loader=None):
+    def __init__(self, modules, simplified=False, dynamic_loader=None):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = []
         self.edges = []
         self.paths = {}
         self.execution_state = {}
-        self.max_depth = max_depth
+        self.max_depth = MAX_DEPTH
         self.simplified = simplified
         self.last_call_address = None
+        self.jump_addr_visits = {}
         self.pending_returns = {}
         self.total_states = 0
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
 
         logging.info("Initialized with dynamic loader: " + str(dynamic_loader))
+        logging.info("Simplified: " + str(self.simplified))
 
 
     def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
@@ -261,7 +264,7 @@ class SVM:
 
             op = instr['opcode']
 
-            logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
+            # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
             # slows down execution significantly.
 
             # stack ops
@@ -279,7 +282,11 @@ class SVM:
 
                 dpth = int(op[4:])
 
-                temp = state.stack[-dpth-1]
+                try:
+                    temp = state.stack[-dpth-1]
+                except IndexError: # Stack underflow
+                    return node
+
                 state.stack[-dpth-1] = state.stack[-1]
                 state.stack[-1] = temp
 
@@ -726,6 +733,10 @@ class SVM:
                 except AttributeError:
                     logging.info("Invalid jump argument (symbolic address)")
                     return node
+                except IndexError: # Stack Underflow
+                    return node
+
+                logging.info("JUMP")
 
                 if (depth < self.max_depth):
 
@@ -733,23 +744,34 @@ class SVM:
 
                     if i is None:
                         logging.info("JUMP to invalid address")
-                        continue
+                        return node
 
                     opcode = disassembly.instruction_list[i]['opcode']
 
                     if opcode == "JUMPDEST":
 
-                        new_state = copy.deepcopy(state)
-                        new_state.pc = i
+                        try:
+                            self.jump_addr_visits[jump_addr] += 1
+                        except KeyError:
+                            self.jump_addr_visits[jump_addr] = 1
 
-                        new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
-                        self.nodes[new_node.uid] = new_node
+                        if self.jump_addr_visits[jump_addr] <= MAX_REVISIT_ADDR:
 
-                        self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
+                            new_state = copy.deepcopy(state)
+                            new_state.pc = i
+
+                            new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
+                            self.nodes[new_node.uid] = new_node
+
+                            self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
+                        else:
+                            logging.info("JUMP target limit reached (possible loop)")         
+
+                            return node         
                     else:
-                        logging.info("Skipping JUMP to invalid destination (not JUMPDEST).")
+                        logging.info("Skipping JUMP to invalid destination (not JUMPDEST): " + str(jump_addr))
 
-                return node
+                        return node
 
             elif op == 'JUMPI':
                 op0, condition = state.stack.pop(), state.stack.pop()
@@ -758,7 +780,7 @@ class SVM:
                     jump_addr = helper.get_concrete_int(op0)
                 except:
                     logging.info("Skipping JUMPI to invalid destination.")
-                    continue
+                    return node
 
                 if (depth < self.max_depth):
 
@@ -777,37 +799,50 @@ class SVM:
 
                         else:
 
-                            # Prune unreachable destinations (if concrete values are used)
-
-
                             if (type(condition) == bool):
                                 return node
+
+                            # Prune unreachable destinations (if concrete values are used)
 
                             elif (type(condition) == BoolRef):
 
                                 if str(simplify(condition)) != "False":
 
+                                    # In simplified mode we visit each basic block only once.
+
+                                    if self.simplified:
                                         if jump_addr not in self.addr_visited:
-
                                             self.addr_visited.append(jump_addr)
+                                        else:
+                                            continue
 
-                                            new_state = copy.deepcopy(state)
-                                            new_state.pc = i
+                                    try:
+                                        self.jump_addr_visits[jump_addr] += 1
+                                    except KeyError:
+                                        self.jump_addr_visits[jump_addr] = 1
 
-                                            new_constraints = copy.deepcopy(constraints)
-                                            new_constraints.append(condition)
+                                    if self.jump_addr_visits[jump_addr] <= MAX_REVISIT_ADDR:
 
-                                            new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=new_constraints)
-                                            self.nodes[new_node.uid] = new_node
+                                        new_state = copy.deepcopy(state)
+                                        new_state.pc = i
 
-                                            self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
+                                        new_constraints = copy.deepcopy(constraints)
+                                        new_constraints.append(condition)
+
+                                        new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=new_constraints)
+                                        self.nodes[new_node.uid] = new_node
+
+                                        self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
+
+                                    else:
+
+                                        logging.info("JUMP target limit reached (possible loop)")         
+
+                                        continue                                              
 
                             else:
                                 logging.debug("Invalid condition: " + str(condition) + "(type " + str(type(condition)) + ")")
-
-                                continue
-
-                        #if not self.simplified:
+                                return node
 
                         new_state = copy.deepcopy(state)
 
@@ -819,7 +854,7 @@ class SVM:
                         new_constraints = copy.deepcopy(constraints)
                         new_constraints.append(negated)
 
-                        new_node = self._sym_exec(context, new_state, depth=depth, constraints=new_constraints)
+                        new_node = self._sym_exec(context, new_state, depth=depth + 1, constraints=new_constraints)
                         self.nodes[new_node.uid] = new_node
 
                         self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, negated))
