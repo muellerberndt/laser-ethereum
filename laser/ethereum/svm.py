@@ -12,8 +12,7 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 16
-MAX_REVISIT_ADDR = 4
+MAX_DEPTH = 8
 
 gbl_next_uid = 0
 
@@ -140,7 +139,7 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, simplified=False, dynamic_loader=None):
+    def __init__(self, modules, dynamic_loader=None, simplified=True):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = []
@@ -150,13 +149,29 @@ class SVM:
         self.max_depth = MAX_DEPTH
         self.simplified = simplified
         self.last_call_address = None
-        self.jump_addr_visits = {}
+        self.last_jump_targets = []
         self.pending_returns = {}
         self.total_states = 0
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
 
         logging.info("SVM initialized with dynamic loader: " + str(dynamic_loader))
+
+
+    def can_jump(self, jump_addr):
+
+        # logging.info("Attempting JUMP to " + str(jump_addr))
+        # logging.info("Latest jumps: " + str(self.last_jump_targets))
+
+        if jump_addr in self.last_jump_targets:
+            return False
+
+        self.last_jump_targets.append(jump_addr)
+
+        if len(self.last_jump_targets) > 4:
+            self.last_jump_targets.pop(0)
+
+        return True
 
 
     def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
@@ -282,7 +297,8 @@ class SVM:
                 try:
                     state.stack.append(state.stack[-dpth])
                 except:
-                    return node
+                    halt = True
+                    continue
 
             elif op.startswith('SWAP'):
 
@@ -291,7 +307,8 @@ class SVM:
                 try:
                     temp = state.stack[-dpth-1]
                 except IndexError: # Stack underflow
-                    return node
+                    halt = True
+                    continue
 
                 state.stack[-dpth-1] = state.stack[-1]
                 state.stack[-1] = temp
@@ -300,7 +317,8 @@ class SVM:
                 try:
                     state.stack.pop()
                 except IndexError: # Stack underflow
-                    return node
+                    halt = True
+                    continue
 
             # Bitwise ops
 
@@ -308,13 +326,15 @@ class SVM:
                 try:
                     state.stack.append(state.stack.pop() & state.stack.pop())
                 except IndexError: # Stack underflow
-                    return node
+                    halt = True
+                    continue
 
             elif op == 'OR':
                 try:
                     op1, op2 = state.stack.pop(), state.stack.pop()
                 except IndexError: # Stack underflow
-                    return node
+                    halt = True
+                    continue
 
                 if (type(op1) == BoolRef):
                     op1 = If(op1, BitVecVal(1,256), BitVecVal(0,256))
@@ -393,6 +413,7 @@ class SVM:
                     s0 = get_concrete_int(s0)
                     s1 = get_concrete_int(s1)
                 except:
+                    halt = True
                     continue
 
                 if s0 <= 31:
@@ -543,7 +564,8 @@ class SVM:
             # Control flow
 
             elif op == 'STOP':
-                return node
+                halt = True
+                continue
 
             # Environment
 
@@ -577,13 +599,19 @@ class SVM:
                 try:
                     data = b''
 
+                    logging.debug("Appending SHA3 data. Mem: " + str(state.memory))
+
                     for i in range(0, length):
                         data += helper.get_concrete_int(state.memory[i]).to_bytes(1, byteorder='big')
                         i += 1 
                 
                 except:
-                    # Can't hash symbolic values
-                    state.stack.append(BitVec("KECCAC_mem_" + str(op0) + ")", 256))
+
+                    svar = str(state.memory[index])
+
+                    svar = svar.replace(" ", "_")
+ 
+                    state.stack.append(BitVec("keccac_" + svar, 256))
                     continue
                 
 
@@ -683,7 +711,7 @@ class SVM:
                         state.memory[offset] = value
                     except:
                         logging.debug("Invalid memory access")
-                        return node
+                        continue
 
                 # logging.debug("MEM: " + str(state.memory))
 
@@ -709,9 +737,11 @@ class SVM:
                 if type(index) == BitVecRef:
                     # SLOAD from hash offset
 
-                    k = sha3.keccak_512()
-                    k.update(bytes(str(index), 'utf-8'))
-                    index = k.hexdigest()[:8]
+                    # k = sha3.keccak_512()
+                    # k.update(bytes(str(index), 'utf-8'))
+                    # index = k.hexdigest()[:8]
+
+                    index = str(index)
 
                 try:
                     data = state.storage[index]
@@ -726,6 +756,9 @@ class SVM:
 
                 logging.debug("Write to storage[" + str(index) + "] at node " + str(start_addr))
 
+                if type(index) == BitVecRef:
+                    index = str(index)
+
                 try:
                     state.storage[index] = value
                 except KeyError:
@@ -737,10 +770,12 @@ class SVM:
                 try:
                     jump_addr = helper.get_concrete_int(state.stack.pop())
                 except AttributeError:
-                    logging.debug("Invalid jump argument (symbolic address)")
-                    return node
+                    logging.info("Invalid jump argument (symbolic address)")
+                    halt = True
+                    continue
                 except IndexError: # Stack Underflow
-                    return node
+                    halt = True
+                    continue
 
                 if (depth < self.max_depth):
 
@@ -748,18 +783,14 @@ class SVM:
 
                     if i is None:
                         logging.debug("JUMP to invalid address")
-                        return node
+                        halt = True
+                        continue
 
                     opcode = disassembly.instruction_list[i]['opcode']
 
                     if opcode == "JUMPDEST":
 
-                        try:
-                            self.jump_addr_visits[jump_addr] += 1
-                        except KeyError:
-                            self.jump_addr_visits[jump_addr] = 1
-
-                        if self.jump_addr_visits[jump_addr] <= MAX_REVISIT_ADDR:
+                        if (self.can_jump(jump_addr)):
 
                             new_state = copy.deepcopy(state)
                             new_state.pc = i
@@ -768,14 +799,20 @@ class SVM:
                             self.nodes[new_node.uid] = new_node
 
                             self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
+                            halt = True
+                            continue
                         else:
-                            logging.debug("JUMP target limit reached (possible loop)")         
-
-                            return node         
+                            logging.debug("JUMP target limit reached")
+                            halt = True
+                            continue
                     else:
                         logging.debug("Skipping JUMP to invalid destination (not JUMPDEST): " + str(jump_addr))
-
-                        return node
+                        halt = True
+                        continue
+                else:
+                    logging.debug("Max depth reached, skipping JUMP")
+                    halt = True
+                    continue                    
 
             elif op == 'JUMPI':
                 op0, condition = state.stack.pop(), state.stack.pop()
@@ -784,7 +821,6 @@ class SVM:
                     jump_addr = helper.get_concrete_int(op0)
                 except:
                     logging.debug("Skipping JUMPI to invalid destination.")
-                    return node
 
                 if (depth < self.max_depth):
 
@@ -804,49 +840,39 @@ class SVM:
                         else:
 
                             if (type(condition) == bool):
-                                return node
-
-                            # Prune unreachable destinations (if concrete values are used)
+                                logging.debug("BOOL CONDITION TYPE")
+                                # continue
 
                             elif (type(condition) == BoolRef):
 
-                                if str(simplify(condition)) != "False":
+                                # In simplified mode we visit each basic block only once.
 
-                                    # In simplified mode we visit each basic block only once.
-
-                                    if self.simplified:
-                                        if jump_addr not in self.addr_visited:
-                                            self.addr_visited.append(jump_addr)
-                                        else:
-                                            continue
-
-                                    try:
-                                        self.jump_addr_visits[jump_addr] += 1
-                                    except KeyError:
-                                        self.jump_addr_visits[jump_addr] = 1
-
-                                    if self.jump_addr_visits[jump_addr] <= MAX_REVISIT_ADDR:
-
-                                        new_state = copy.deepcopy(state)
-                                        new_state.pc = i
-
-                                        new_constraints = copy.deepcopy(constraints)
-                                        new_constraints.append(condition)
-
-                                        new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=new_constraints)
-                                        self.nodes[new_node.uid] = new_node
-
-                                        self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
-
+                                if self.simplified:
+                                    if jump_addr not in self.addr_visited:
+                                        self.addr_visited.append(jump_addr)
                                     else:
+                                        continue
 
-                                        logging.debug("JUMP target limit reached (possible loop)")         
+                                if (self.can_jump(jump_addr)):
 
-                                        continue                                              
+                                    new_state = copy.deepcopy(state)
+                                    new_state.pc = i
+
+                                    new_constraints = copy.deepcopy(constraints)
+                                    new_constraints.append(condition)
+
+                                    new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=new_constraints)
+                                    self.nodes[new_node.uid] = new_node
+
+                                    self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
+
+                                else:
+                                    logging.debug("JUMP target limit reached (JUMPI)")
 
                             else:
                                 logging.debug("Invalid condition: " + str(condition) + "(type " + str(type(condition)) + ")")
-                                return node
+                                halt = True
+                                continue                
 
                         new_state = copy.deepcopy(state)
 
@@ -858,12 +884,16 @@ class SVM:
                         new_constraints = copy.deepcopy(constraints)
                         new_constraints.append(negated)
 
-                        new_node = self._sym_exec(context, new_state, depth=depth + 1, constraints=new_constraints)
+                        new_node = self._sym_exec(context, new_state, depth=depth, constraints=new_constraints)
                         self.nodes[new_node.uid] = new_node
 
                         self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, negated))
 
-                        return node
+                        halt = True
+                        continue
+
+                else:
+                    logging.debug("Max depth reached, skipping JUMPI")
 
 
             elif op == 'PC':
@@ -900,7 +930,7 @@ class SVM:
                     callee_address = hex(helper.get_concrete_int(to))
                     module = self.modules[callee_address]
                 except AttributeError:
-                    logging.info("Unable to get concrete call address")
+                    logging.debug("Unable to get concrete call address")
                     if self.dynamic_loader is not None:
 
                         logging.info("Attempting to resolve dependency")
@@ -908,14 +938,14 @@ class SVM:
 
                         if module is None:
 
-                            logging.info("No contract code returned, not a contract account?")
+                            logging.debug("No contract code returned, not a contract account?")
                             ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                             state.stack.append(ret)
 
                             continue
 
                     else:
-                        logging.info("Dynamic loader unavailable. Skipping call")
+                        logging.debug("Dynamic loader unavailable. Skipping call")
                         ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                         state.stack.append(ret)
 
@@ -1034,7 +1064,8 @@ class SVM:
                 for ret_uid in self.pending_returns[self.last_call_address]:
                     self.edges.append(Edge(ret_uid, new_node.uid, JumpType.RETURN))
 
-                return node
+                # halt = True
+                # continue 
 
             elif op == 'RETURN':
                 offset, length = state.stack.pop(), state.stack.pop()
@@ -1049,13 +1080,21 @@ class SVM:
 
                 state.stack.append(BitVec("retval", 256))
 
-                return node
+                halt = True
+                continue                
 
             elif op == 'SUICIDE':
-                return node
+                logging.info("---SUICIDE---")
+                halt = True
+                continue                
 
             elif op == 'REVERT':
-                return node
+                halt = True
+                continue 
 
             elif op == 'INVALID':
-                return node
+                halt = True
+                continue 
+
+        logging.debug("Returning from node " + str(node.uid))
+        return node
