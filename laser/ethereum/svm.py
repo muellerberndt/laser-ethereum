@@ -1084,7 +1084,6 @@ class SVM:
                 continue                
 
             elif op == 'SUICIDE':
-                logging.info("---SUICIDE---")
                 halt = True
                 continue                
 
