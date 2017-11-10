@@ -5,7 +5,6 @@ from z3 import *
 import binascii
 import copy
 import logging
-import sha3
 
 
 TT256 = 2 ** 256
@@ -14,7 +13,7 @@ TT255 = 2 ** 255
 
 MAX_DEPTH = 8
 
-gbl_next_uid = 0
+gbl_next_uid = 0 # node counter
 
 
 class SVMError(Exception):
@@ -119,7 +118,6 @@ class Node:
 
         return {'module_name': self.module_name, 'code': code, 'start_addr': self.start_addr, 'instruction_list': self.instruction_list, 'states': self.states, 'constraints': self.constraints}
 
-
 class Edge:
     
     def __init__(self, node_from, node_to, edge_type=JumpType.UNCONDITIONAL, condition=None):
@@ -160,8 +158,7 @@ class SVM:
 
     def can_jump(self, jump_addr):
 
-        # logging.info("Attempting JUMP to " + str(jump_addr))
-        # logging.info("Latest jumps: " + str(self.last_jump_targets))
+        # Every jump is checked against the last four jump destinations to prevent the SVM from following loops.
 
         if jump_addr in self.last_jump_targets:
             return False
@@ -172,40 +169,6 @@ class SVM:
             self.last_jump_targets.pop(0)
 
         return True
-
-
-    def depth_first_search(self, this_node, node_to, path, paths, depth, nodes_visited):
-
-        if (depth > MAX_DEPTH):
-            return
-
-        if this_node == node_to:
-            paths.append(path)
-            return
-
-        nodes_visited.append(this_node)
-
-        edges_out = []
-
-        for edge in self.edges:
-
-            if edge.node_from == this_node and edge.node_to not in nodes_visited:
-                edges_out.append(edge)
-
-        for edge in edges_out:
-
-            new_path = copy.deepcopy(path)
-            new_path.append(edge)
-            self.depth_first_search(edge.node_to, node_to, new_path, paths, depth + 1, nodes_visited)
-
-
-    def find_paths(self, node_to):
-        paths = []
-        nodes_visited = []
-
-        self.depth_first_search(self.active_node_prefix + ':0', node_to, [], paths, 0, nodes_visited)
-
-        return paths
 
 
     def sym_exec(self, main_address):
@@ -1040,12 +1003,6 @@ class SVM:
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                 state.stack.append(ret)
 
-                # memoutstart = helper.get_concrete_int(memoutstart)
-                # memoutsz = helper.get_concrete_int(memoutsz
-
-                # new_state.mem_extend(memoutstart, memoutsz)
-                # new_state.memory[memoutstart:memoutstart + memoutsz] = self.last_returned
-
                 new_state = copy.deepcopy(state)
                 new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
 
@@ -1054,8 +1011,9 @@ class SVM:
                 for ret_uid in self.pending_returns[self.last_call_address]:
                     self.edges.append(Edge(ret_uid, new_node.uid, JumpType.RETURN))
 
-                # halt = True
-                # continue 
+                state.stack.append(BitVec("retval", 256))
+
+                continue 
 
             elif op == 'RETURN':
                 offset, length = state.stack.pop(), state.stack.pop()
@@ -1066,9 +1024,7 @@ class SVM:
                     logging.debug("Return with symbolic length or offset. Not supported")
 
                 if self.last_call_address is not None:
-                    self.pending_returns[self.last_call_address].append(node.uid)
-
-                state.stack.append(BitVec("retval", 256))
+                    self.pending_returns[self.last_call_address].append(node.uid)              
 
                 halt = True
                 continue                
