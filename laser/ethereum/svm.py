@@ -218,14 +218,6 @@ class SVM:
         self.nodes[node.uid] = node
 
         logging.info("Execution complete, saved " + str(self.total_states) + " states")
-
-        logging.debug("--- NODES ---")
-        logging.debug(self.nodes)
-        logging.debug("--- EDGES ---")
-
-        for e in self.edges:
-            logging.debug(str(e.as_dict()))
-
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges")
         logging.info("Resolving paths")
 
@@ -599,9 +591,7 @@ class SVM:
                 try:
                     data = b''
 
-                    logging.debug("Appending SHA3 data. Mem: " + str(state.memory))
-
-                    for i in range(0, length):
+                    for i in range(index, index + length):
                         data += helper.get_concrete_int(state.memory[i]).to_bytes(1, byteorder='big')
                         i += 1 
                 
@@ -619,7 +609,7 @@ class SVM:
 
                 keccac = utils.sha3(utils.bytearray_to_bytestr(data))
 
-                logging.debug("Hash: " + str(binascii.hexlify(keccac)))
+                logging.debug("SHA3 Hash: " + str(binascii.hexlify(keccac)))
 
                 state.stack.append(BitVecVal(helper.concrete_int_from_bytes(keccac, 0), 256))
 
