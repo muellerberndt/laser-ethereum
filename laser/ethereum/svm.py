@@ -59,6 +59,9 @@ class State():
                     self.memory.append(0)
                     n_append -= 1
 
+        else:
+            raise Exception
+
                 # Deduct gas.. not yet implemented
 
 
@@ -503,7 +506,13 @@ class SVM:
 
                 if size > 0:
 
-                    state.mem_extend(mstart, size)
+                    try:
+                        state.mem_extend(mstart, size)
+                    except:
+                        logging.debug("Memory allocation error: mstart = " + str(mstart) + ", size = " + str(size))
+                        state.mem_extend(mstart, 1)
+                        state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_" + str(dstart), 256)
+                        continue
 
                     try:
                         i_data = context.calldata[dstart]
@@ -513,7 +522,9 @@ class SVM:
                             i_data += 1
                     except:
                         logging.debug("Exception copying calldata to memory")
+
                         state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_" + str(dstart), 256)
+
                         # continue
 
             # Control flow
@@ -640,14 +651,17 @@ class SVM:
                 op0, value = state.stack.pop(), state.stack.pop()
 
                 try:
-                    offset = helper.get_concrete_int(op0)
+                    mstart = helper.get_concrete_int(op0)
                 except AttributeError:
                     logging.debug("MSTORE to symbolic index. Not supported")
                     continue
 
-                state.mem_extend(offset, 32)
+                try:
+                    state.mem_extend(mstart, 32)
+                except Exception:
+                    logging.debug("Error extending memory, mstart = " + str(mstart) + ", size = 32")
 
-                logging.debug("MSTORE to mem[" + str(offset) + "]: " + str(value))
+                logging.debug("MSTORE to mem[" + str(mstart) + "]: " + str(value))
 
                 try:
                     # Attempt to concretize value
@@ -656,12 +670,12 @@ class SVM:
                     i = 0
 
                     for b in _bytes:
-                        state.memory[offset + i] = _bytes[i]
+                        state.memory[mstart + i] = _bytes[i]
                         i += 1
 
                 except:
                     try:
-                        state.memory[offset] = value
+                        state.memory[mstart] = value
                     except:
                         logging.debug("Invalid memory access")
                         continue
@@ -723,7 +737,7 @@ class SVM:
                 try:
                     jump_addr = helper.get_concrete_int(state.stack.pop())
                 except AttributeError:
-                    logging.info("Invalid jump argument (symbolic address)")
+                    logging.debug("Invalid jump argument (symbolic address)")
                     halt = True
                     continue
                 except IndexError: # Stack Underflow
@@ -886,7 +900,7 @@ class SVM:
                     logging.debug("Unable to get concrete call address")
                     if self.dynamic_loader is not None:
 
-                        logging.info("Attempting to resolve dependency")
+                        logging.debug("Attempting to resolve dependency")
                         module = self.dynamic_loader.dynld(context.module['address'], str(simplify(to)))
 
                         if module is None:
@@ -946,7 +960,7 @@ class SVM:
                 try:
                     calldata = state.memory[helper.get_concrete_int(meminstart):helper.get_concrete_int(meminstart+meminsz)]
                     calldata_type = CalldataType.CONCRETE
-                    logging.info("calldata: " + str(calldata))
+                    logging.debug("calldata: " + str(calldata))
 
                 except AttributeError:
 
