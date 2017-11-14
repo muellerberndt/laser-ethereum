@@ -1,3 +1,3 @@
 # laser-ethereum
 
-Symbolic virtual machine for Ethereum
+Symbolic Ethereum virtual machine
