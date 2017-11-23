@@ -140,7 +140,7 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, dynamic_loader=None, simplified=True):
+    def __init__(self, modules, dynamic_loader=None, simplified=False):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = []
@@ -240,7 +240,7 @@ class SVM:
 
             op = instr['opcode']
 
-            # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
+            logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
             # slows down execution significantly.
 
             # stack ops
@@ -355,7 +355,9 @@ class SVM:
                 # we only implement 2 ** x
                 base, exponent = state.stack.pop(), state.stack.pop()
 
-                if (base.as_long() == 2):
+                if (type(base) != BitVecNumRef):
+                    state.stack.append(BitVec(str(base) + "_EXP_" + str(exponent), 256))
+                elif (base.as_long() == 2):
                     if exponent == 0:
                         state.stack.append(BitVecVal(1, 256))
                     else:
@@ -387,7 +389,11 @@ class SVM:
 
             elif op == 'LT':
 
-                exp = ULT(helper.pop_bitvec(state), helper.pop_bitvec(state))
+                op1 = state.stack.pop()
+                op2 = state.stack.pop()
+
+                exp = ULT(op1, op2)
+
                 state.stack.append(exp)
 
             elif op == 'GT':
@@ -900,7 +906,7 @@ class SVM:
                     logging.debug("Unable to get concrete call address")
                     if self.dynamic_loader is not None:
 
-                        logging.debug("Attempting to resolve dependency")
+                        logging.debug("Attempting to resolve dependency from storage")
                         module = self.dynamic_loader.dynld(context.module['address'], str(simplify(to)))
 
                         if module is None:
