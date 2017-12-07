@@ -389,14 +389,7 @@ class SVM:
 
             elif op == 'LT':
 
-                op1 = state.stack.pop()
-                op2 = state.stack.pop()
-
-                if (type(op1) == int and type(op2) == int):
-                    exp = (ULT(BitVecVal(op1, 256), BitVecVal(op2, 256)))
-                else:
-                    exp = ULT(op1, op2)
-
+                exp = ULT(helper.pop_bitvec(state), helper.pop_bitvec(state))
                 state.stack.append(exp)
 
             elif op == 'GT':
