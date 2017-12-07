@@ -392,7 +392,10 @@ class SVM:
                 op1 = state.stack.pop()
                 op2 = state.stack.pop()
 
-                exp = ULT(op1, op2)
+                if (type(op1) == int and type(op2) == int):
+                    exp = (ULT(BitVecVal(op1, 256), BitVecVal(op2, 256)))
+                else:
+                    exp = ULT(op1, op2)
 
                 state.stack.append(exp)
 
@@ -901,6 +904,7 @@ class SVM:
 
                 try:
                     callee_address = hex(helper.get_concrete_int(to))
+
                     module = self.modules[callee_address]
                 except AttributeError:
                     logging.debug("Unable to get concrete call address")
