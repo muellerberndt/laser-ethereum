@@ -11,7 +11,7 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 12
+MAX_DEPTH = 10
 
 gbl_next_uid = 0 # node counter
 
