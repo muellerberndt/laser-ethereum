@@ -11,7 +11,7 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 16
+MAX_DEPTH = 12
 
 gbl_next_uid = 0 # node counter
 
@@ -243,7 +243,7 @@ class SVM:
 
             op = instr['opcode']
 
-            logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
+            # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
             # slows down execution significantly.
 
             # stack ops
