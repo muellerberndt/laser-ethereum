@@ -143,7 +143,7 @@ class SVM:
     def __init__(self, modules, dynamic_loader=None, simplified=False):
         self.modules = modules
         self.nodes = {}
-        self.addr_visited = []
+        self.addr_visited = {}
         self.edges = []
         self.paths = {}
         self.execution_state = {}
@@ -177,6 +177,9 @@ class SVM:
     def sym_exec(self, main_address):
 
         logging.debug("Starting SVM execution")
+
+        for module in self.modules:
+            self.addr_visited[module] = []
 
         context = Context(self.modules[main_address])
 
@@ -817,9 +820,10 @@ class SVM:
                                 # In simplified mode we visit each basic block only once.
 
                                 if self.simplified:
-                                    if jump_addr not in self.addr_visited:
-                                        self.addr_visited.append(jump_addr)
+                                    if jump_addr not in self.addr_visited[context.module['address']]:
+                                        self.addr_visited[context.module['address']].append(jump_addr)
                                     else:
+                                        logging.debug("Address already visited, skipping...")
                                         continue
 
                                 if (self.can_jump(jump_addr)):
