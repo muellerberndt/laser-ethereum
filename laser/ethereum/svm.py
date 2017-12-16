@@ -11,7 +11,7 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 8
+MAX_DEPTH = 16
 
 gbl_next_uid = 0 # node counter
 
@@ -163,13 +163,13 @@ class SVM:
 
         # Every jump is checked against the last four jump destinations to prevent the SVM from following loops.
 
-        if jump_addr in self.last_jump_targets:
-            return False
+        #if jump_addr in self.last_jump_targets:
+        #    return False
 
-        self.last_jump_targets.append(jump_addr)
+        #self.last_jump_targets.append(jump_addr)
 
-        if len(self.last_jump_targets) > 4:
-            self.last_jump_targets.pop(0)
+        #if len(self.last_jump_targets) > 4:
+        #    self.last_jump_targets.pop(0)
 
         return True
 
@@ -243,7 +243,7 @@ class SVM:
 
             op = instr['opcode']
 
-            # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
+            logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
             # slows down execution significantly.
 
             # stack ops
@@ -535,6 +535,9 @@ class SVM:
             # Control flow
 
             elif op == 'STOP':
+                if self.last_call_address is not None:
+                    self.pending_returns[self.last_call_address].append(node.uid)
+
                 halt = True
                 continue
 
@@ -1055,6 +1058,9 @@ class SVM:
                 continue                
 
             elif op == 'REVERT':
+                if self.last_call_address is not None:
+                    self.pending_returns[self.last_call_address].append(node.uid)
+
                 halt = True
                 continue 
 
