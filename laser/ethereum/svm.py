@@ -613,7 +613,8 @@ class SVM:
                 start, s2, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
 
             elif op == 'BLOCKHASH':
-                state.stack.append(BitVec("blockhash", 256))
+                blocknumber = state.stack.pop()
+                state.stack.append(BitVec("blockhash_block_" + str(blocknumber), 256))
 
             elif op == 'COINBASE':
                 state.stack.append(BitVec("coinbase", 256))
