@@ -199,7 +199,7 @@ class SVM:
         start_addr = disassembly.instruction_list[state.pc]['address']
 
         if start_addr == 0:
-            self.execution_state['current_func'] = "main"
+            self.execution_state['current_func'] = "fallback"
             self.execution_state['current_func_addr'] = start_addr
 
         node = Node(context.module['name'], start_addr, constraints)
