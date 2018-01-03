@@ -138,7 +138,7 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, dynamic_loader=None, max_depth=10):
+    def __init__(self, modules, dynamic_loader=None, max_depth=12):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = {}
@@ -158,9 +158,7 @@ class SVM:
 
     def can_jump(self, jump_addr):
 
-        # Every jump is checked against the last four jump destinations to prevent the SVM from following loops.
-
-        '''
+        # Loop detection: Every jump target is checked against the last four jump destinations
 
         if jump_addr in self.last_jump_targets:
             return False
@@ -169,8 +167,6 @@ class SVM:
 
         if len(self.last_jump_targets) > 4:
             self.last_jump_targets.pop(0)
-
-        '''
 
         return True
 
