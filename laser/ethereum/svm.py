@@ -11,8 +11,6 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-MAX_DEPTH = 10
-
 gbl_next_uid = 0 # node counter
 
 
@@ -140,20 +138,20 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, dynamic_loader=None):
+    def __init__(self, modules, dynamic_loader=None, max_depth=10):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = {}
         self.edges = []
         self.paths = {}
         self.execution_state = {}
-        self.max_depth = MAX_DEPTH
         self.last_call_address = None
         self.last_jump_targets = []
         self.pending_returns = {}
         self.total_states = 0
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
+        self.max_depth = max_depth
 
         logging.info("SVM initialized with dynamic loader: " + str(dynamic_loader))
 
