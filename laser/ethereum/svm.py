@@ -140,7 +140,7 @@ class Edge:
 
 class SVM:
 
-    def __init__(self, modules, dynamic_loader=None, simplified=False):
+    def __init__(self, modules, dynamic_loader=None):
         self.modules = modules
         self.nodes = {}
         self.addr_visited = {}
@@ -148,7 +148,6 @@ class SVM:
         self.paths = {}
         self.execution_state = {}
         self.max_depth = MAX_DEPTH
-        self.simplified = simplified
         self.last_call_address = None
         self.last_jump_targets = []
         self.pending_returns = {}
@@ -163,13 +162,17 @@ class SVM:
 
         # Every jump is checked against the last four jump destinations to prevent the SVM from following loops.
 
-        #if jump_addr in self.last_jump_targets:
-        #    return False
+        '''
 
-        #self.last_jump_targets.append(jump_addr)
+        if jump_addr in self.last_jump_targets:
+            return False
 
-        #if len(self.last_jump_targets) > 4:
-        #    self.last_jump_targets.pop(0)
+        self.last_jump_targets.append(jump_addr)
+
+        if len(self.last_jump_targets) > 4:
+            self.last_jump_targets.pop(0)
+
+        '''
 
         return True
 
@@ -820,15 +823,6 @@ class SVM:
                                 # continue
 
                             elif (type(condition) == BoolRef):
-
-                                # In simplified mode we visit each basic block only once.
-
-                                if self.simplified:
-                                    if jump_addr not in self.addr_visited[context.module['address']]:
-                                        self.addr_visited[context.module['address']].append(jump_addr)
-                                    else:
-                                        logging.debug("Address already visited, skipping...")
-                                        continue
 
                                 if (self.can_jump(jump_addr)):
 
