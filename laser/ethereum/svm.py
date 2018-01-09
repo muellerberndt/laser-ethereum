@@ -2,6 +2,7 @@ from laser.ethereum import helper
 from ethereum import utils
 from enum import Enum
 from z3 import *
+import re
 import binascii
 import copy
 import logging
@@ -894,31 +895,58 @@ class SVM:
                 try:
                     callee_address = hex(helper.get_concrete_int(to))
 
-                    module = self.modules[callee_address]
                 except AttributeError:
-                    # Not a concrete call address. Call target may be an address in storage.
-                    # The dynamic loader supports targets of the format storage_XX, and will try to obtain the address from the blockchain
+                    # Not a concrete call address. Call target may be an address in storage.        
 
-                    logging.debug("Unable to get concrete call address")
+                    m = re.search(r'storage_(\d+)', str(simplify(to)))
+
+                    if (m and self.dynamic_loader is not None):
+                        idx = int(m.group(1))
+                        logging.info("Dynamic contract address at storage index " + str(idx))
+
+                        # attempt to read the contract address from instance storage 
+
+                        callee_address = self.dynamic_loader.read_storage(context.module['address'], idx)
+
+                        # testrpc simply returns the address, geth response is more elaborate.
+
+                        if not re.match(r"^0x[0-9a-f]{40}$", callee_address):
+
+                            callee_address = "0x" + callee_address[26:]
+
+                    else:
+                        logging.info("Unable to resolve address from storage.")
+                        ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                        state.stack.append(ret)
+                        continue
+
+                    if (int(callee_address, 16) < 4):
+
+                        logging.info("Native contract called: " + callee_address)
+
+                        # Todo: Implement native contracts
+
+                        ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                        state.stack.append(ret)
+                        continue
+
+                    # CALL to address
 
                     if self.dynamic_loader is not None:
 
-                        logging.debug("Attempting to resolve dependency from storage")
-                        module = self.dynamic_loader.dynld(context.module['address'], str(simplify(to)))
+                        module = self.dynamic_loader.dynld(context.module['address'], callee_address)
 
                         if module is None:
 
                             logging.debug("No contract code returned, not a contract account?")
                             ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                             state.stack.append(ret)
-
                             continue
 
                         else:
 
                             # New contract loaded successfully, add it to the modules list
 
-                            callee_address = module['address']
                             self.modules[callee_address] = module
                             self.addr_visited[module['address']] = []
 
@@ -930,6 +958,9 @@ class SVM:
                         state.stack.append(ret)
 
                         continue
+
+                try:
+                    module = self.modules[callee_address]
 
                 except KeyError:
                     # Concrete call address, but contract is not in the modules list
