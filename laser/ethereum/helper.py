@@ -49,6 +49,8 @@ def pop_bitvec(state):
 
     if type(item) == BoolRef:
         return If(item, BitVecVal(1, 256), BitVecVal(0, 256))
+    elif type(item) == int:
+        return BitVecVal(item, 256)
     else:
         return item
 
