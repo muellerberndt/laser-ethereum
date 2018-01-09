@@ -892,15 +892,15 @@ class SVM:
                     gas, to, meminstart, meminsz, memoutstart, memoutsz = \
                         state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
 
-                is_callable = True
-
                 try:
                     callee_address = hex(helper.get_concrete_int(to))
 
                 except AttributeError:
-                    # Not a concrete call address. Call target may be an address in storage.        
+                    # Not a concrete call address. Call target may be an address in storage.
 
                     m = re.search(r'storage_(\d+)', str(simplify(to)))
+
+                    logging.info("CALL to: " + str(simplify(to)))
 
                     if (m and self.dynamic_loader is not None):
                         idx = int(m.group(1))
@@ -932,10 +932,7 @@ class SVM:
                     state.stack.append(ret)
                     continue
 
-                if not re.match(callee_address, r"^0x[0-9a-f]{40}$"):
-                        is_callable = False
-
-                if not is_callable:
+                if not re.match(r"^0x[0-9a-f]{40}", callee_address):
                         logging.debug("Invalid address: " + str(callee_address))
                         ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                         state.stack.append(ret)
