@@ -900,7 +900,7 @@ class SVM:
 
                     m = re.search(r'storage_(\d+)', str(simplify(to)))
 
-                    logging.info("CALL to: " + str(simplify(to)))
+                    logging.debug("CALL to: " + str(simplify(to)))
 
                     if (m and self.dynamic_loader is not None):
                         idx = int(m.group(1))
