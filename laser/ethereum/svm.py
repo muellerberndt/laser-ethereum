@@ -12,6 +12,7 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
+
 gbl_next_uid = 0 # node counter
 
 
@@ -186,7 +187,6 @@ class SVM:
 
         logging.info("Execution complete, saved " + str(self.total_states) + " states")
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges")
-        logging.info("Resolving paths")
 
 
     def _sym_exec(self, context, state, depth=0, constraints=[]):
@@ -892,6 +892,8 @@ class SVM:
                     gas, to, meminstart, meminsz, memoutstart, memoutsz = \
                         state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop(), state.stack.pop()
 
+                is_callable = True
+
                 try:
                     callee_address = hex(helper.get_concrete_int(to))
 
@@ -920,50 +922,32 @@ class SVM:
                         state.stack.append(ret)
                         continue
 
-                    if (int(callee_address, 16) < 4):
+                if (int(callee_address, 16) < 5):
 
-                        logging.info("Native contract called: " + callee_address)
+                    logging.info("Native contract called: " + callee_address)
 
-                        # Todo: Implement native contracts
+                    # Todo: Implement native contracts
 
-                        ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
-                        state.stack.append(ret)
-                        continue
+                    ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                    state.stack.append(ret)
+                    continue
 
-                    # CALL to address
+                if not re.match(callee_address, r"^0x[0-9a-f]{40}$"):
+                        is_callable = False
 
-                    if self.dynamic_loader is not None:
-
-                        module = self.dynamic_loader.dynld(context.module['address'], callee_address)
-
-                        if module is None:
-
-                            logging.debug("No contract code returned, not a contract account?")
-                            ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
-                            state.stack.append(ret)
-                            continue
-
-                        else:
-
-                            # New contract loaded successfully, add it to the modules list
-
-                            self.modules[callee_address] = module
-                            self.addr_visited[module['address']] = []
-
-                            logging.info("Dependency loaded: " + module['address'])
-
-                    else:
-                        logging.debug("Dynamic loader unavailable. Skipping call")
+                if not is_callable:
+                        logging.debug("Invalid address: " + str(callee_address))
                         ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                         state.stack.append(ret)
 
                         continue
 
                 try:
+
                     module = self.modules[callee_address]
 
                 except KeyError:
-                    # Concrete call address, but contract is not in the modules list
+                    # We have a valid call address, but contract is not in the modules list
 
                     logging.info("Module with address " + callee_address + " not loaded.")
 
@@ -975,7 +959,7 @@ class SVM:
 
                         if module is None:
 
-                            logging.info("No  code returned, not a contract account?")
+                            logging.info("No code returned, not a contract account?")
                             ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                             state.stack.append(ret)
                             continue
