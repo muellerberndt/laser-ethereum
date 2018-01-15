@@ -33,7 +33,7 @@ The easiest way to use LASER is by installing Mythril command line tool:
 setup(
     name='laser-ethereum',
 
-    version='0.4.0',
+    version='0.4.1',
 
     description='Symbolic Ethereum virtual machine',
     long_description=long_description,
@@ -41,7 +41,7 @@ setup(
     author='Bernhard Mueller',
     author_email='bernhard.mueller11@gmail.com',
 
-    license='Free for non-commercial use',
+    license='MIT',
 
     classifiers=[
         'Development Status :: 3 - Alpha',
