@@ -241,7 +241,7 @@ class SVM:
 
             op = instr['opcode']
 
-            logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
+            # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
             # slows down execution significantly.
 
             # stack ops
@@ -332,17 +332,15 @@ class SVM:
 
             elif op == 'MOD':
                 s0, s1 = helper.pop_bitvec(state), helper.pop_bitvec(state)
-                state.stack.append(0 if s1 == 0 else s0 % s1)
+                state.stack.append(0 if s1 == 0 else URem(s0, s1))
 
             elif op == 'SDIV':
-                s0, s1 = helper.to_signed(helper.pop_bitvec(state)), helper.to_signed(helper.pop_bitvec(state))
-                state.stack.append(0 if s1 == 0 else (abs(s0) // abs(s1) *
-                                              (-1 if s0 * s1 < 0 else 1)) & TT256M1)
+                s0, s1 = helper.pop_bitvec(state), helper.pop_bitvec(state)
+                state.stack.append(s0 / s1)
 
             elif op == 'SMOD':
-                s0, s1 = helper.to_signed(helper.pop_bitvec(state)), helper.to_signed(helper.pop_bitvec(state))
-                state.stack.append(0 if s1 == 0 else (abs(s0) % abs(s1) *
-                                              (-1 if s0 < 0 else 1)) & TT256M1)
+                s0, s1 = helper.pop_bitvec(state), helper.pop_bitvec(state)
+                state.stack.append(0 if s1 == 0 else s0 % s1)
 
             elif op == 'ADDMOD':
                 s0, s1, s2 = helper.pop_bitvec(state), helper.pop_bitvec(state), helper.pop_bitvec(state)
