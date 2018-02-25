@@ -928,6 +928,13 @@ class SVM:
                         state.stack.append(ret)
                         continue
 
+                if not re.match(r"^0x[0-9a-f]{40}", callee_address):
+                        logging.debug("Invalid address: " + str(callee_address))
+                        ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                        state.stack.append(ret)
+
+                        continue
+
                 if (int(callee_address, 16) < 5):
 
                     logging.info("Native contract called: " + callee_address)
@@ -937,13 +944,6 @@ class SVM:
                     ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                     state.stack.append(ret)
                     continue
-
-                if not re.match(r"^0x[0-9a-f]{40}", callee_address):
-                        logging.debug("Invalid address: " + str(callee_address))
-                        ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
-                        state.stack.append(ret)
-
-                        continue
 
                 try:
 
