@@ -62,7 +62,8 @@ class Environment():
         blockheader = "", 
         depth = 0,
         current_contract_name = "unknown",
-        current_function_name = "unknown" 
+        current_function_name = "unknown",
+        active_account = None
         ):
 
         self.sender = sender
@@ -79,6 +80,7 @@ class Environment():
 
         self.current_contract_name = current_contract_name
         self.current_function_name = current_function_name
+        self.active_account = active_account
 
 
 class MachineState():
@@ -236,15 +238,16 @@ class Laser:
             BitVec("origin", 256),
             BitVec("address", 256),
             CalldataType.SYMBOLIC,
-            self.accounts[main_address].code,
-            self.accounts[main_address].contract_name,
-            "fallback")
+            code = self.accounts[main_address].code,
+            current_contract_name = self.accounts[main_address].contract_name,
+            current_function_name = "fallback",
+            active_account= self.accounts[main_address]
+            )
 
         gblState = GlobalState(self.accounts, environment)
 
         node = self._sym_exec(gblState)
         self.nodes[node.uid] = node
-
         logging.info("Execution complete")
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges, " + str(self.total_states) + " total states")
 
@@ -264,7 +267,7 @@ class Laser:
 
         node = Node(environment.current_contract_name, start_addr, constraints)
 
-        logging.debug("- Entering block " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
+        logging.debug("- Entering node " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
         if start_addr in disassembly.addr_to_func:
             # Enter a new function
@@ -273,8 +276,6 @@ class Laser:
             self.current_func = function_name
 
             logging.info("- Entering function " + environment.current_contract_name + ":" + function_name)
-
-            # node.instruction_list.append({'opcode': function_name, 'address': disassembly.instruction_list[state.pc]['address']})
 
             state.pc += 1
 
@@ -609,7 +610,7 @@ class Laser:
             # Environment
 
             elif op == 'ADDRESS':
-                state.stack.append(environment.address)
+                state.stack.append(environment.sender)
 
             elif op == 'BALANCE':
                 addr = state.stack.pop()
@@ -619,7 +620,7 @@ class Laser:
                 state.stack.append(environment.origin)
 
             elif op == 'CALLER':
-                state.stack.append(environment.caller)
+                state.stack.append(environment.sender)
 
             elif op == 'CODESIZE':
                 state.stack.append(len(disassembly.instruction_list))
@@ -785,10 +786,10 @@ class Laser:
                     index = str(index)
 
                 try:
-                    data = state.storage[index]
+                    data = gblState.accounts[gblState.environment.sender].storage[index]
                 except KeyError:
                     data = BitVec("storage_" + str(index), 256)
-                    state.storage[index] = data
+                    gblState.environment.active_account.storage[index] = data
 
                 state.stack.append(data)
 
@@ -801,7 +802,7 @@ class Laser:
                     index = str(index)
 
                 try:
-                    state.storage[index] = value
+                    gblState.environment.active_account.storage[index] = value
                 except KeyError:
                     logging.debug("Error writing to storage: Invalid index")
                     continue
@@ -833,10 +834,10 @@ class Laser:
 
                         if (self.can_jump(jump_addr)):
 
-                            new_state = copy.deepcopy(gblState)
-                            new_state.pc = i
+                            new_gblState = copy.deepcopy(gblState)
+                            new_gblState.mstate.pc = i
 
-                            new_node = self._sym_exec(new_state, depth=depth+1, constraints=constraints)
+                            new_node = self._sym_exec(new_gblState, depth=depth+1, constraints=constraints)
                             self.nodes[new_node.uid] = new_node
 
                             self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
@@ -1011,7 +1012,7 @@ class Laser:
 
                 try:
 
-                    module = self.modules[callee_address]
+                    module = self.accounts[callee_address]
 
                 except KeyError:
                     # We have a valid call address, but contract is not in the modules list
@@ -1119,8 +1120,8 @@ class Laser:
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                 state.stack.append(ret)
 
-                new_state = copy.deepcopy(state)
-                new_node = self._sym_exec(environment, new_state, depth=depth+1, constraints=constraints)
+                new_gblState = copy.deepcopy(gblState)
+                new_node = self._sym_exec(gblState, depth=depth+1, constraints=constraints)
 
                 self.nodes[new_node.uid] = new_node
 
