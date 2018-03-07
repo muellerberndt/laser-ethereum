@@ -245,8 +245,8 @@ class Laser:
         node = self._sym_exec(gblState)
         self.nodes[node.uid] = node
 
-        logging.info("Execution complete, saved " + str(self.total_states) + " states")
-        logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges")
+        logging.info("Execution complete")
+        logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges, " + str(self.total_states) + " total states")
 
 
     def _sym_exec(self, gblState, depth=0, constraints=[]):
@@ -910,7 +910,7 @@ class Laser:
                                 continue 
 
                         node.states.append(gblState)
-                        new_gblState = GlobalState(gblState.accounts, gblState.environment, copy.deepcopy(gblState.mstate))
+                        new_gblState = copy.deepcopy(gblState)
 
                         if (type(condition) == BoolRef):
                             negated = Not(condition)
