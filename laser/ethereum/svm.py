@@ -28,6 +28,8 @@ class SVMError(Exception):
     pass
 
 
+
+
 '''
 Classes to represent the global state, machine state and execution environment as described in the Ethereum yellow paper.
 '''
@@ -122,6 +124,7 @@ class GlobalState():
         return instructions[self.mstate.pc]
 
 
+
 '''
 The final analysis result is represented as a graph. Each node of the graph represents a basic block of code.
 The states[] list contains the individual global state at each program counter position. There is one set of constraints on each node.
@@ -131,8 +134,8 @@ for drawing a nice control flow graph.
 
 class Node:
 
-    def __init__(self, module_name, start_addr=0, constraints = []):
-        self.module_name = module_name
+    def __init__(self, contract_name, start_addr=0, constraints = []):
+        self.contract_name = contract_name
         self.start_addr = start_addr
         self.states = []
         self.constraints = constraints
@@ -159,7 +162,7 @@ class Node:
 
             code += "\\n"
 
-        return {'module_name': self.module_name, 'start_addr': self.start_addr, 'function_name': self.function_name, 'code': code}
+        return {'contract_name': self.contract_name, 'start_addr': self.start_addr, 'function_name': self.function_name, 'code': code}
 
 
 class Edge:
@@ -201,6 +204,13 @@ class LaserEVM:
         self.max_depth = max_depth
 
         logging.info("LASER EVM initialized with dynamic loader: " + str(dynamic_loader))
+
+
+    def copy_global_state(self, gblState):
+        mstate = copy.deepcopy(gblState.mstate)
+        environment = copy.copy(gblState.environment)
+
+        return GlobalState(self.accounts, environment, mstate)
 
 
     def can_jump(self, jump_addr):
@@ -287,7 +297,7 @@ class LaserEVM:
             # Save state
 
             node.states.append(gblState)
-            gblState = copy.deepcopy(gblState)
+            gblState = self.copy_global_state(gblState)
 
             state = gblState.mstate
 
@@ -827,7 +837,7 @@ class LaserEVM:
 
                         if (self.can_jump(jump_addr)):
 
-                            new_gblState = copy.deepcopy(gblState)
+                            new_gblState = self.copy_global_state(gblState)
                             new_gblState.mstate.pc = i
 
                             new_node = self._sym_exec(new_gblState, depth=depth+1, constraints=constraints)
@@ -884,7 +894,7 @@ class LaserEVM:
 
                                 if (self.can_jump(jump_addr)):
 
-                                    new_gblState = copy.deepcopy(gblState)
+                                    new_gblState = self.copy_global_state(gblState)
                                     new_gblState.mstate.pc = i
 
                                     new_constraints = copy.deepcopy(constraints)
@@ -1027,7 +1037,7 @@ class LaserEVM:
 
                         # New contract bytecode loaded successfully, create a new contract account
 
-                        self.accounts[callee_address] = Account(callee_address, code)
+                        self.accounts[callee_address] = Account(callee_address, code, callee_address)
                         self.addr_visited[callee_address] = []
 
                         logging.info("Dependency loaded: " + callee_address)
