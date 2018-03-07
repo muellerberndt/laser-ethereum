@@ -34,7 +34,7 @@ Classes to represent the global state, machine state and execution environment a
 
 class Account():
 
-    def __init__(self, code = None, balance = BitVec("balance", 256), contract_name = "unknown"):
+    def __init__(self, address, code = None, contract_name = "unknown", balance = BitVec("balance", 256)):
         self.nonce = 0
         self.code = code
         self.balance = balance
@@ -44,6 +44,7 @@ class Account():
         Metadata
         '''
 
+        self.address = address
         self.contract_name = contract_name
 
 
@@ -51,20 +52,22 @@ class Environment():
 
     def __init__(
         self, 
+        active_account,
         sender, 
         calldata, 
         gasprice, 
         callvalue, 
         origin, 
-        address, 
-        calldata_type,
-        code = [],
-        blockheader = "", 
-        depth = 0,
-        current_contract_name = "unknown",
-        current_function_name = "unknown",
-        active_account = None
+        calldata_type = CalldataType.SYMBOLIC,
         ):
+
+
+        # Metadata
+
+        self.active_account = active_account
+
+        self.address = active_account.address
+        self.code = active_account.code
 
         self.sender = sender
         self.calldata = calldata
@@ -72,15 +75,7 @@ class Environment():
         self.gasprice = gasprice
         self.origin = origin
         self.callvalue = callvalue
-        self.code = code
-        self.blockheader = blockheader
-        self.depth = depth
 
-        # Metadata
-
-        self.current_contract_name = current_contract_name
-        self.current_function_name = current_function_name
-        self.active_account = active_account
 
 
 class MachineState():
@@ -103,6 +98,8 @@ class MachineState():
                 while n_append > 0:
                     self.memory.append(0)
                     n_append -= 1
+
+                memsize = sz
 
         else:
             raise Exception
@@ -186,9 +183,9 @@ class Edge:
 Main symbolic execution engine.
 '''
 
-class Laser:
+class LaserEVM:
 
-    def __init__(self, accounts=[], dynamic_loader=None, max_depth=12):
+    def __init__(self, accounts, dynamic_loader=None, max_depth=12):
         self.accounts = accounts
         self.nodes = {}
         self.addr_visited = {}
@@ -203,7 +200,7 @@ class Laser:
         self.dynamic_loader = dynamic_loader
         self.max_depth = max_depth
 
-        logging.info("LASER initialized with dynamic loader: " + str(dynamic_loader))
+        logging.info("LASER EVM initialized with dynamic loader: " + str(dynamic_loader))
 
 
     def can_jump(self, jump_addr):
@@ -231,18 +228,14 @@ class Laser:
         # Initialize the execution environment
 
         environment = Environment(
+            self.accounts[main_address],
             BitVec("caller", 256),
             [],
             BitVec("gasprice", 256),
             BitVec("callvalue", 256),
             BitVec("origin", 256),
-            BitVec("address", 256),
-            CalldataType.SYMBOLIC,
-            code = self.accounts[main_address].code,
-            current_contract_name = self.accounts[main_address].contract_name,
-            current_function_name = "fallback",
-            active_account= self.accounts[main_address]
-            )
+            calldata_type = CalldataType.SYMBOLIC,
+        )
 
         gblState = GlobalState(self.accounts, environment)
 
@@ -265,7 +258,7 @@ class Laser:
             self.current_func = "fallback"
             self.current_func_addr = start_addr
 
-        node = Node(environment.current_contract_name, start_addr, constraints)
+        node = Node(environment.active_account.contract_name, start_addr, constraints)
 
         logging.debug("- Entering node " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
@@ -275,7 +268,7 @@ class Laser:
             function_name = disassembly.addr_to_func[start_addr]
             self.current_func = function_name
 
-            logging.info("- Entering function " + environment.current_contract_name + ":" + function_name)
+            logging.info("- Entering function " + environment.active_account.contract_name + ":" + function_name)
 
             state.pc += 1
 
@@ -303,7 +296,7 @@ class Laser:
 
             op = instr['opcode']
 
-            # logging.debug("[" + environment.current_contract_name + "] " + helper.get_trace_line(instr, state))
+            # logging.debug("[" + environment.active_account.contract_name + "] " + helper.get_trace_line(instr, state))
             # slows down execution significantly.
 
             # stack ops
@@ -516,14 +509,14 @@ class Laser:
                     offset = helper.get_concrete_int(simplify(op0))
                 except AttributeError:
                     logging.debug("CALLDATALOAD: Unsupported symbolic index")
-                    state.stack.append(BitVec("calldata_" + str(environment.current_contract_name) + "_" + str(op0), 256))
+                    state.stack.append(BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(op0), 256))
                     continue
 
                 try:
                     b = environment.calldata[offset]
                 except IndexError:
                     logging.debug("Calldata not set, using symbolic variable instead")
-                    state.stack.append(BitVec("calldata_" + str(environment.current_contract_name) + "_" + str(op0), 256))
+                    state.stack.append(BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(op0), 256))
                     continue
 
                 if type(b) == int:
@@ -546,7 +539,7 @@ class Laser:
             elif op == 'CALLDATASIZE':
 
                 if environment.calldata_type == CalldataType.SYMBOLIC:
-                    state.stack.append(BitVec("calldatasize_" + environment.current_contract_name, 256))
+                    state.stack.append(BitVec("calldatasize_" + environment.active_account.contract_name, 256))
                 else:
                     state.stack.append(BitVecVal(len(environment.calldata), 256))
 
@@ -564,7 +557,7 @@ class Laser:
                 except:
                     logging.debug("Unsupported symbolic calldata offset in CALLDATACOPY")
                     state.mem_extend(mstart, 1)
-                    state.memory[mstart] = BitVec("calldata_" + str(environment.current_contract_name) + "_cpy", 256)
+                    state.memory[mstart] = BitVec("calldata_" + str(environment.active_account.contract_name) + "_cpy", 256)
                     continue
 
                 try:
@@ -572,7 +565,7 @@ class Laser:
                 except:
                     logging.debug("Unsupported symbolic size in CALLDATACOPY")
                     state.mem_extend(mstart, 1)
-                    state.memory[mstart] = BitVec("calldata_" + str(environment.current_contract_name) + "_" + str(dstart), 256)
+                    state.memory[mstart] = BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(dstart), 256)
                     continue
 
                 if size > 0:
@@ -582,7 +575,7 @@ class Laser:
                     except:
                         logging.debug("Memory allocation error: mstart = " + str(mstart) + ", size = " + str(size))
                         state.mem_extend(mstart, 1)
-                        state.memory[mstart] = BitVec("calldata_" + str(environment.current_contract_name) + "_" + str(dstart), 256)
+                        state.memory[mstart] = BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(dstart), 256)
                         continue
 
                     try:
@@ -594,7 +587,7 @@ class Laser:
                     except:
                         logging.debug("Exception copying calldata to memory")
 
-                        state.memory[mstart] = BitVec("calldata_" + str(environment.current_contract_name) + "_" + str(dstart), 256)
+                        state.memory[mstart] = BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(dstart), 256)
 
                         # continue
 
@@ -979,7 +972,7 @@ class Laser:
 
                         # attempt to read the contract address from instance storage 
 
-                        callee_address = self.dynamic_loader.read_storage(environment.module['address'], idx)
+                        callee_address = self.dynamic_loader.read_storage(environment.active_account.address, idx)
 
                         # testrpc simply returns the address, geth response is more elaborate.
 
@@ -1023,21 +1016,21 @@ class Laser:
 
                         logging.info("Attempting to load dependency")
 
-                        module = self.dynamic_loader.dynld(environment.module['address'], callee_address)
+                        code = self.dynamic_loader.dynld(environment.active_account.address, callee_address)
 
-                        if module is None:
+                        if code is None:
 
                             logging.info("No code returned, not a contract account?")
                             ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                             state.stack.append(ret)
                             continue
 
-                        # New contract loaded successfully, add it to the modules list
+                        # New contract bytecode loaded successfully, create a new contract account
 
-                        self.modules[callee_address] = module
+                        self.accounts[callee_address] = Account(callee_address, code)
                         self.addr_visited[callee_address] = []
 
-                        logging.info("Dependency loaded: " + module['address'])
+                        logging.info("Dependency loaded: " + callee_address)
 
                     else:
                          logging.info("Dynamic loader unavailable. Skipping call")
@@ -1048,10 +1041,10 @@ class Laser:
                 logging.info("Executing " + op + " to: " + callee_address)
 
                 try:
-                    callee_module = self.modules[callee_address]
+                    callee_account = self.accounts[callee_address]
                 except KeyError:
                     logging.info("Contract " + str(callee_address) + " not loaded.")
-                    logging.info((str(self.modules)))
+                    logging.info((str(self.accounts)))
                     
                     ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                     state.stack.append(ret)
@@ -1074,26 +1067,31 @@ class Laser:
                 self.last_call_address = disassembly.instruction_list[state.pc]['address']
                 self.pending_returns[self.last_call_address] = []
 
-                callee_environment = environment(callee_module, calldata = calldata, caller = environment.address, origin = environment.origin, calldata_type = calldata_type)
-
                 if (op == 'CALL'):
 
-                    new_node = self._sym_exec(callee_environment, State(), depth=depth+1, constraints=constraints)
+                    callee_environment = Environment(callee_account, environment.active_account.address, calldata, environment.gasprice, value, environment.origin, calldata_type = calldata_type)
+                    new_gblState = GlobalState(gblState.accounts, callee_environment, MachineState(gas))
+
+                    new_node = self._sym_exec(new_gblState, depth=depth+1, constraints=constraints)
+
                     self.nodes[new_node.uid] = new_node
 
                 elif (op == 'CALLCODE'):
+
+                    callee_environment = Environment(callee_account, environment.active_account.address, calldata, environment.gasprice, value, environment.origin, calldata_type = calldata_type)
+                    new_gblState = GlobalState(gblState.accounts, callee_environment, MachineState(gas))
 
                     temp_module = environment.module
                     temp_callvalue = environment.callvalue
                     temp_caller = environment.caller
                     temp_calldata = environment.calldata
 
-                    environment.module = callee_module
+                    environment.code = callee_account.code
                     environment.callvalue = value
                     environment.caller = environment.address
                     environment.calldata = calldata
 
-                    new_node = self._sym_exec(environment, State(), depth=depth+1, constraints=constraints)
+                    new_node = self._sym_exec(environment, MachineState(gas), depth=depth+1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
                     environment.module = temp_module
@@ -1103,16 +1101,16 @@ class Laser:
 
                 elif (op == 'DELEGATECALL'):
 
-                    temp_module = environment.module
+                    temp_code = environment.code
                     temp_calldata = environment.calldata
 
-                    environment.module = callee_module
+                    environment.code = callee_account.code
                     environment.calldata = calldata
 
-                    new_node = self._sym_exec(environment, State(), depth=depth + 1, constraints=constraints)
+                    new_node = self._sym_exec(environment, MachineState(gas), depth=depth + 1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
-                    environment.module = temp_module
+                    environment.code = temp_code
                     environment.calldata = temp_calldata
 
                 self.edges.append(Edge(node.uid, new_node.uid, JumpType.CALL))
