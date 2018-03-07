@@ -1,5 +1,5 @@
 from laser.ethereum import helper
-from ethereum import utils
+from ethereum import utils, opcodes
 from enum import Enum
 from z3 import *
 import re
@@ -12,13 +12,11 @@ TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 TT255 = 2 ** 255
 
-
 gbl_next_uid = 0 # node counter
 
-
-class SVMError(Exception):
-    pass
-
+class CalldataType(Enum):
+    CONCRETE = 1
+    SYMBOLIC = 2
 
 class JumpType(Enum):
     CONDITIONAL = 1
@@ -26,26 +24,71 @@ class JumpType(Enum):
     CALL = 3
     RETURN = 4
 
-
-class CalldataType(Enum):
-    CONCRETE = 1
-    SYMBOLIC = 2
+class SVMError(Exception):
+    pass
 
 
-class State():
+'''
+Classes to represent the global state, machine state and execution environment as described in the Ethereum yellow paper.
+'''
 
-    def __init__(self, gas=1000000):
+class Account():
+
+    def __init__(self, code = None, balance = BitVec("balance", 256), contract_name = "unknown"):
+        self.nonce = 0
+        self.code = code
+        self.balance = balance
         self.storage = {}
-        self.memory = []
-        self.stack = []
-        self.last_returned = []
-        self.gas = gas
+
+        '''
+        Metadata
+        '''
+
+        self.contract_name = contract_name
+
+
+class Environment():
+
+    def __init__(
+        self, 
+        sender, 
+        calldata, 
+        gasprice, 
+        callvalue, 
+        origin, 
+        address, 
+        calldata_type,
+        code = [],
+        blockheader = "", 
+        depth = 0,
+        current_contract_name = "unknown",
+        current_function_name = "unknown" 
+        ):
+
+        self.sender = sender
+        self.calldata = calldata
+        self.calldata_type = calldata_type
+        self.gasprice = gasprice
+        self.origin = origin
+        self.callvalue = callvalue
+        self.code = code
+        self.blockheader = blockheader
+        self.depth = depth
+
+        # Metadata
+
+        self.current_contract_name = current_contract_name
+        self.current_function_name = current_function_name
+
+
+class MachineState():
+
+    def __init__(self, gas):
         self.pc = 0
-
-    def as_dict(self):
-
-        return {'memory': self.memory, 'stack': self.stack, 'storage': self.storage, 'pc': self.pc, 'gas': self.gas}
-
+        self.stack = []
+        self.memory = []
+        self.memsize = 0
+        self.gas = gas
 
     def mem_extend(self, start, sz):
 
@@ -62,38 +105,37 @@ class State():
         else:
             raise Exception
 
-                # Deduct gas.. not yet implemented
+                # Deduct gas for memory extension... not yet implemented
 
 
-class Context(): 
+class GlobalState():
 
-    def __init__(
-        self,
-        module,
-        calldata = [],
-        callvalue = BitVec("callvalue", 256),
-        caller = BitVec("caller", 256),
-        origin = BitVec("origin", 256),
-        address = BitVec("address", 256),
-        calldata_type = CalldataType.SYMBOLIC
-        ):
+    def __init__(self, accounts, environment, machinestate = MachineState(gas = 10000000)):
+        self.accounts = accounts
+        self.environment = environment
+        self.mstate = machinestate
 
-        self.module = module
-        self.calldata = calldata # bytelist
-        self.callvalue = callvalue
-        self.caller = caller
-        self.origin = origin
-        self.address = address
-        self.calldata_type = calldata_type
+    # Returns the instruction currently being executed.
 
+    def get_current_instruction(self):
+        instructions = self.environment.code.instruction_list
+
+        return instructions[self.mstate.pc]
+
+
+'''
+The final analysis result is represented as a graph. Each node of the graph represents a basic block of code.
+The states[] list contains the individual global state at each program counter position. There is one set of constraints on each node.
+A list of edges between nodes with associated constraints is also saved. This is not strictly necessary for analysis, but is useful
+for drawing a nice control flow graph.
+'''
 
 class Node:
 
     def __init__(self, module_name, start_addr=0, constraints = []):
         self.module_name = module_name
         self.start_addr = start_addr
-        self.instruction_list = []
-        self.states = {}
+        self.states = []
         self.constraints = constraints
         self.function_name = "unknown"
 
@@ -103,23 +145,23 @@ class Node:
 
         self.uid = gbl_next_uid
         gbl_next_uid += 1
-
-
-    def __str__(self):
-        return str(self.as_dict())
         
-    def as_dict(self):
+    def get_cfg_dict(self):
 
         code = ""
 
-        for instruction in self.instruction_list:
+        for state in self.states:
+
+            instruction = state.get_current_instruction()
+
             code += str(instruction['address']) + " " + instruction['opcode']
             if instruction['opcode'].startswith("PUSH"):
                 code += " " + instruction['argument']
 
             code += "\\n"
 
-        return {'module_name': self.module_name, 'code': code, 'start_addr': self.start_addr, 'instruction_list': self.instruction_list, 'states': self.states, 'constraints': self.constraints}
+        return {'module_name': self.module_name, 'start_addr': self.start_addr, 'function_name': self.function_name, 'code': code}
+
 
 class Edge:
     
@@ -138,15 +180,19 @@ class Edge:
         return {'from': self.node_from, 'to': self.node_to}
 
 
-class SVM:
+'''
+Main symbolic execution engine.
+'''
 
-    def __init__(self, modules, dynamic_loader=None, max_depth=12):
-        self.modules = modules
+class Laser:
+
+    def __init__(self, accounts=[], dynamic_loader=None, max_depth=12):
+        self.accounts = accounts
         self.nodes = {}
         self.addr_visited = {}
         self.edges = []
-        self.paths = {}
-        self.execution_state = {}
+        self.current_func = ""
+        self.current_func_addr = 0
         self.last_call_address = None
         self.last_jump_targets = []
         self.pending_returns = {}
@@ -155,12 +201,12 @@ class SVM:
         self.dynamic_loader = dynamic_loader
         self.max_depth = max_depth
 
-        logging.info("SVM initialized with dynamic loader: " + str(dynamic_loader))
+        logging.info("LASER initialized with dynamic loader: " + str(dynamic_loader))
 
 
     def can_jump(self, jump_addr):
 
-        # Loop detection: Every jump target is checked against the last four jump destinations
+        # Loop detection
 
         if jump_addr in self.last_jump_targets:
             return False
@@ -175,32 +221,48 @@ class SVM:
 
     def sym_exec(self, main_address):
 
-        logging.debug("Starting SVM execution")
+        logging.debug("Starting LASER execution")
 
-        for module in self.modules:
-            self.addr_visited[module] = []
+        for account in self.accounts:
+            self.addr_visited[account] = []
 
-        context = Context(self.modules[main_address])
+        # Initialize the execution environment
 
-        node = self._sym_exec(context, State())
+        environment = Environment(
+            BitVec("caller", 256),
+            [],
+            BitVec("gasprice", 256),
+            BitVec("callvalue", 256),
+            BitVec("origin", 256),
+            BitVec("address", 256),
+            CalldataType.SYMBOLIC,
+            self.accounts[main_address].code,
+            self.accounts[main_address].contract_name,
+            "fallback")
+
+        gblState = GlobalState(self.accounts, environment)
+
+        node = self._sym_exec(gblState)
         self.nodes[node.uid] = node
 
         logging.info("Execution complete, saved " + str(self.total_states) + " states")
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges")
 
 
-    def _sym_exec(self, context, state, depth=0, constraints=[]):
+    def _sym_exec(self, gblState, depth=0, constraints=[]):
     
-        disassembly = context.module['disassembly']
+        environment = gblState.environment
+        disassembly = environment.code
+        state = gblState.mstate
         depth = depth
 
         start_addr = disassembly.instruction_list[state.pc]['address']
 
         if start_addr == 0:
-            self.execution_state['current_func'] = "fallback"
-            self.execution_state['current_func_addr'] = start_addr
+            self.current_func = "fallback"
+            self.current_func_addr = start_addr
 
-        node = Node(context.module['name'], start_addr, constraints)
+        node = Node(environment.current_contract_name, start_addr, constraints)
 
         logging.debug("- Entering block " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
 
@@ -208,19 +270,17 @@ class SVM:
             # Enter a new function
 
             function_name = disassembly.addr_to_func[start_addr]
-            self.execution_state['current_func'] = function_name
+            self.current_func = function_name
 
-            logging.info("- Entering function " + context.module['name'] + ":" + function_name)
+            logging.info("- Entering function " + environment.current_contract_name + ":" + function_name)
 
-            node.instruction_list.append({'opcode': function_name, 'address': disassembly.instruction_list[state.pc]['address']})
+            # node.instruction_list.append({'opcode': function_name, 'address': disassembly.instruction_list[state.pc]['address']})
 
             state.pc += 1
 
-        node.function_name = self.execution_state['current_func']
+        node.function_name = self.current_func
 
         halt = False
-
-        instr = disassembly.instruction_list[state.pc]
 
         while not halt:
 
@@ -230,18 +290,19 @@ class SVM:
                 logging.debug("Invalid PC")
                 return node
 
-            # Save instruction and state
+            # Save state
 
-            node.instruction_list.append(instr)
-            node.states[instr['address']] = state
+            node.states.append(gblState)
+            gblState = copy.deepcopy(gblState)
 
-            state = copy.deepcopy(state)
+            state = gblState.mstate
+
             self.total_states += 1
             state.pc += 1
 
             op = instr['opcode']
 
-            # logging.debug("[" + context.module['name'] + "] " + helper.get_trace_line(instr, state))
+            # logging.debug("[" + environment.current_contract_name + "] " + helper.get_trace_line(instr, state))
             # slows down execution significantly.
 
             # stack ops
@@ -443,7 +504,7 @@ class SVM:
             # Call data
 
             elif op == 'CALLVALUE':
-                state.stack.append(context.callvalue)
+                state.stack.append(environment.callvalue)
 
             elif op == 'CALLDATALOAD':
                 # unpack 32 bytes from calldata into a word and put it on the stack
@@ -454,14 +515,14 @@ class SVM:
                     offset = helper.get_concrete_int(simplify(op0))
                 except AttributeError:
                     logging.debug("CALLDATALOAD: Unsupported symbolic index")
-                    state.stack.append(BitVec("calldata_" + str(context.module['name']) + "_" + str(op0), 256))
+                    state.stack.append(BitVec("calldata_" + str(environment.current_contract_name) + "_" + str(op0), 256))
                     continue
 
                 try:
-                    b = context.calldata[offset]
+                    b = environment.calldata[offset]
                 except IndexError:
                     logging.debug("Calldata not set, using symbolic variable instead")
-                    state.stack.append(BitVec("calldata_" + str(context.module['name']) + "_" + str(op0), 256))
+                    state.stack.append(BitVec("calldata_" + str(environment.current_contract_name) + "_" + str(op0), 256))
                     continue
 
                 if type(b) == int:
@@ -471,7 +532,7 @@ class SVM:
 
                     try:
                         for i in range(offset, offset + 32):
-                            val += context.calldata[i].to_bytes(1, byteorder='big')
+                            val += environment.calldata[i].to_bytes(1, byteorder='big')
 
                         state.stack.append(BitVecVal(int.from_bytes(val, byteorder='big'), 256))
 
@@ -483,10 +544,10 @@ class SVM:
                                        
             elif op == 'CALLDATASIZE':
 
-                if context.calldata_type == CalldataType.SYMBOLIC:
-                    state.stack.append(BitVec("calldatasize_" + context.module['name'], 256))
+                if environment.calldata_type == CalldataType.SYMBOLIC:
+                    state.stack.append(BitVec("calldatasize_" + environment.current_contract_name, 256))
                 else:
-                    state.stack.append(BitVecVal(len(context.calldata), 256))
+                    state.stack.append(BitVecVal(len(environment.calldata), 256))
 
             elif op == 'CALLDATACOPY':
                 op0, op1, op2 = state.stack.pop(), state.stack.pop(), state.stack.pop()
@@ -502,7 +563,7 @@ class SVM:
                 except:
                     logging.debug("Unsupported symbolic calldata offset in CALLDATACOPY")
                     state.mem_extend(mstart, 1)
-                    state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_cpy", 256)
+                    state.memory[mstart] = BitVec("calldata_" + str(environment.current_contract_name) + "_cpy", 256)
                     continue
 
                 try:
@@ -510,7 +571,7 @@ class SVM:
                 except:
                     logging.debug("Unsupported symbolic size in CALLDATACOPY")
                     state.mem_extend(mstart, 1)
-                    state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_" + str(dstart), 256)
+                    state.memory[mstart] = BitVec("calldata_" + str(environment.current_contract_name) + "_" + str(dstart), 256)
                     continue
 
                 if size > 0:
@@ -520,19 +581,19 @@ class SVM:
                     except:
                         logging.debug("Memory allocation error: mstart = " + str(mstart) + ", size = " + str(size))
                         state.mem_extend(mstart, 1)
-                        state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_" + str(dstart), 256)
+                        state.memory[mstart] = BitVec("calldata_" + str(environment.current_contract_name) + "_" + str(dstart), 256)
                         continue
 
                     try:
-                        i_data = context.calldata[dstart]
+                        i_data = environment.calldata[dstart]
 
                         for i in range(mstart, mstart + size):
-                            state.memory[i] = context.calldata[i_data]
+                            state.memory[i] = environment.calldata[i_data]
                             i_data += 1
                     except:
                         logging.debug("Exception copying calldata to memory")
 
-                        state.memory[mstart] = BitVec("calldata_" + str(context.module['name']) + "_" + str(dstart), 256)
+                        state.memory[mstart] = BitVec("calldata_" + str(environment.current_contract_name) + "_" + str(dstart), 256)
 
                         # continue
 
@@ -548,17 +609,17 @@ class SVM:
             # Environment
 
             elif op == 'ADDRESS':
-                state.stack.append(context.address)
+                state.stack.append(environment.address)
 
             elif op == 'BALANCE':
                 addr = state.stack.pop()
                 state.stack.append(BitVec("balance_at_" + str(addr), 256))
 
             elif op == 'ORIGIN':
-                state.stack.append(context.origin)
+                state.stack.append(environment.origin)
 
             elif op == 'CALLER':
-                state.stack.append(context.caller)
+                state.stack.append(environment.caller)
 
             elif op == 'CODESIZE':
                 state.stack.append(len(disassembly.instruction_list))
@@ -772,10 +833,10 @@ class SVM:
 
                         if (self.can_jump(jump_addr)):
 
-                            new_state = copy.deepcopy(state)
+                            new_state = copy.deepcopy(gblState)
                             new_state.pc = i
 
-                            new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
+                            new_node = self._sym_exec(new_state, depth=depth+1, constraints=constraints)
                             self.nodes[new_node.uid] = new_node
 
                             self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
@@ -802,6 +863,8 @@ class SVM:
                 except:
                     logging.debug("Skipping JUMPI to invalid destination.")
 
+                logging.debug("JUMP to: " + str(jump_addr))
+
                 if (depth < self.max_depth):
 
                     i = helper.get_instruction_index(disassembly.instruction_list, jump_addr)
@@ -827,13 +890,13 @@ class SVM:
 
                                 if (self.can_jump(jump_addr)):
 
-                                    new_state = copy.deepcopy(state)
-                                    new_state.pc = i
+                                    new_gblState = copy.deepcopy(gblState)
+                                    new_gblState.mstate.pc = i
 
                                     new_constraints = copy.deepcopy(constraints)
                                     new_constraints.append(condition)
 
-                                    new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=new_constraints)
+                                    new_node = self._sym_exec(new_gblState, depth=depth+1, constraints=new_constraints)
                                     self.nodes[new_node.uid] = new_node
 
                                     self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
@@ -844,9 +907,10 @@ class SVM:
                             else:
                                 logging.debug("Invalid condition: " + str(condition) + "(type " + str(type(condition)) + ")")
                                 halt = True
-                                continue                
+                                continue 
 
-                        new_state = copy.deepcopy(state)
+                        node.states.append(gblState)
+                        new_gblState = GlobalState(gblState.accounts, gblState.environment, copy.deepcopy(gblState.mstate))
 
                         if (type(condition) == BoolRef):
                             negated = Not(condition)
@@ -856,7 +920,7 @@ class SVM:
                         new_constraints = copy.deepcopy(constraints)
                         new_constraints.append(negated)
 
-                        new_node = self._sym_exec(context, new_state, depth=depth, constraints=new_constraints)
+                        new_node = self._sym_exec(new_gblState, depth=depth, constraints=new_constraints)
                         self.nodes[new_node.uid] = new_node
 
                         self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, negated))
@@ -914,7 +978,7 @@ class SVM:
 
                         # attempt to read the contract address from instance storage 
 
-                        callee_address = self.dynamic_loader.read_storage(context.module['address'], idx)
+                        callee_address = self.dynamic_loader.read_storage(environment.module['address'], idx)
 
                         # testrpc simply returns the address, geth response is more elaborate.
 
@@ -958,7 +1022,7 @@ class SVM:
 
                         logging.info("Attempting to load dependency")
 
-                        module = self.dynamic_loader.dynld(context.module['address'], callee_address)
+                        module = self.dynamic_loader.dynld(environment.module['address'], callee_address)
 
                         if module is None:
 
@@ -1009,46 +1073,46 @@ class SVM:
                 self.last_call_address = disassembly.instruction_list[state.pc]['address']
                 self.pending_returns[self.last_call_address] = []
 
-                callee_context = Context(callee_module, calldata = calldata, caller = context.address, origin = context.origin, calldata_type = calldata_type)
+                callee_environment = environment(callee_module, calldata = calldata, caller = environment.address, origin = environment.origin, calldata_type = calldata_type)
 
                 if (op == 'CALL'):
 
-                    new_node = self._sym_exec(callee_context, State(), depth=depth+1, constraints=constraints)
+                    new_node = self._sym_exec(callee_environment, State(), depth=depth+1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
                 elif (op == 'CALLCODE'):
 
-                    temp_module = context.module
-                    temp_callvalue = context.callvalue
-                    temp_caller = context.caller
-                    temp_calldata = context.calldata
+                    temp_module = environment.module
+                    temp_callvalue = environment.callvalue
+                    temp_caller = environment.caller
+                    temp_calldata = environment.calldata
 
-                    context.module = callee_module
-                    context.callvalue = value
-                    context.caller = context.address
-                    context.calldata = calldata
+                    environment.module = callee_module
+                    environment.callvalue = value
+                    environment.caller = environment.address
+                    environment.calldata = calldata
 
-                    new_node = self._sym_exec(context, State(), depth=depth+1, constraints=constraints)
+                    new_node = self._sym_exec(environment, State(), depth=depth+1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
-                    context.module = temp_module
-                    context.callvalue = temp_callvalue
-                    context.caller = temp_caller
-                    context.calldata = temp_calldata
+                    environment.module = temp_module
+                    environment.callvalue = temp_callvalue
+                    environment.caller = temp_caller
+                    environment.calldata = temp_calldata
 
                 elif (op == 'DELEGATECALL'):
 
-                    temp_module = context.module
-                    temp_calldata = context.calldata
+                    temp_module = environment.module
+                    temp_calldata = environment.calldata
 
-                    context.module = callee_module
-                    context.calldata = calldata
+                    environment.module = callee_module
+                    environment.calldata = calldata
 
-                    new_node = self._sym_exec(context, State(), depth=depth + 1, constraints=constraints)
+                    new_node = self._sym_exec(environment, State(), depth=depth + 1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
-                    context.module = temp_module
-                    context.calldata = temp_calldata
+                    environment.module = temp_module
+                    environment.calldata = temp_calldata
 
                 self.edges.append(Edge(node.uid, new_node.uid, JumpType.CALL))
 
@@ -1056,7 +1120,7 @@ class SVM:
                 state.stack.append(ret)
 
                 new_state = copy.deepcopy(state)
-                new_node = self._sym_exec(context, new_state, depth=depth+1, constraints=constraints)
+                new_node = self._sym_exec(environment, new_state, depth=depth+1, constraints=constraints)
 
                 self.nodes[new_node.uid] = new_node
 
