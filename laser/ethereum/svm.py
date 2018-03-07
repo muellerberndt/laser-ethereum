@@ -10,13 +10,14 @@ import logging
 
 TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
-TT255 = 2 ** 255
 
-gbl_next_uid = 0 # node counter
+gbl_next_uid = 0  # node counter
+
 
 class CalldataType(Enum):
     CONCRETE = 1
     SYMBOLIC = 2
+
 
 class JumpType(Enum):
     CONDITIONAL = 1
@@ -24,19 +25,19 @@ class JumpType(Enum):
     CALL = 3
     RETURN = 4
 
+
 class SVMError(Exception):
     pass
-
-
 
 
 '''
 Classes to represent the global state, machine state and execution environment as described in the Ethereum yellow paper.
 '''
 
+
 class Account():
 
-    def __init__(self, address, code = None, contract_name = "unknown", balance = BitVec("balance", 256)):
+    def __init__(self, address, code=None, contract_name="unknown", balance=BitVec("balance", 256)):
         self.nonce = 0
         self.code = code
         self.balance = balance
@@ -53,16 +54,15 @@ class Account():
 class Environment():
 
     def __init__(
-        self, 
+        self,
         active_account,
-        sender, 
-        calldata, 
-        gasprice, 
-        callvalue, 
-        origin, 
-        calldata_type = CalldataType.SYMBOLIC,
-        ):
-
+        sender,
+        calldata,
+        gasprice,
+        callvalue,
+        origin,
+        calldata_type=CalldataType.SYMBOLIC,
+    ):
 
         # Metadata
 
@@ -77,7 +77,6 @@ class Environment():
         self.gasprice = gasprice
         self.origin = origin
         self.callvalue = callvalue
-
 
 
 class MachineState():
@@ -101,17 +100,17 @@ class MachineState():
                     self.memory.append(0)
                     n_append -= 1
 
-                memsize = sz
+                self.memsize = sz
 
         else:
             raise Exception
 
-                # Deduct gas for memory extension... not yet implemented
+            # Deduct gas for memory extension... not yet implemented
 
 
 class GlobalState():
 
-    def __init__(self, accounts, environment, machinestate = MachineState(gas = 10000000)):
+    def __init__(self, accounts, environment, machinestate=MachineState(gas=10000000)):
         self.accounts = accounts
         self.environment = environment
         self.mstate = machinestate
@@ -124,7 +123,6 @@ class GlobalState():
         return instructions[self.mstate.pc]
 
 
-
 '''
 The final analysis result is represented as a graph. Each node of the graph represents a basic block of code.
 The states[] list contains the individual global state at each program counter position. There is one set of constraints on each node.
@@ -132,9 +130,10 @@ A list of edges between nodes with associated constraints is also saved. This is
 for drawing a nice control flow graph.
 '''
 
+
 class Node:
 
-    def __init__(self, contract_name, start_addr=0, constraints = []):
+    def __init__(self, contract_name, start_addr=0, constraints=[]):
         self.contract_name = contract_name
         self.start_addr = start_addr
         self.states = []
@@ -147,7 +146,7 @@ class Node:
 
         self.uid = gbl_next_uid
         gbl_next_uid += 1
-        
+
     def get_cfg_dict(self):
 
         code = ""
@@ -166,7 +165,7 @@ class Node:
 
 
 class Edge:
-    
+
     def __init__(self, node_from, node_to, edge_type=JumpType.UNCONDITIONAL, condition=None):
 
         self.node_from = node_from
@@ -176,15 +175,15 @@ class Edge:
 
     def __str__(self):
         return str(self.as_dict())
-        
+
     def as_dict(self):
 
         return {'from': self.node_from, 'to': self.node_to}
 
-
 '''
 Main symbolic execution engine.
 '''
+
 
 class LaserEVM:
 
@@ -205,13 +204,11 @@ class LaserEVM:
 
         logging.info("LASER EVM initialized with dynamic loader: " + str(dynamic_loader))
 
-
     def copy_global_state(self, gblState):
         mstate = copy.deepcopy(gblState.mstate)
         environment = copy.copy(gblState.environment)
 
         return GlobalState(self.accounts, environment, mstate)
-
 
     def can_jump(self, jump_addr):
 
@@ -226,7 +223,6 @@ class LaserEVM:
             self.last_jump_targets.pop(0)
 
         return True
-
 
     def sym_exec(self, main_address):
 
@@ -244,7 +240,7 @@ class LaserEVM:
             BitVec("gasprice", 256),
             BitVec("callvalue", 256),
             BitVec("origin", 256),
-            calldata_type = CalldataType.SYMBOLIC,
+            calldata_type=CalldataType.SYMBOLIC,
         )
 
         gblState = GlobalState(self.accounts, environment)
@@ -254,9 +250,8 @@ class LaserEVM:
         logging.info("Execution complete")
         logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges, " + str(self.total_states) + " total states")
 
-
     def _sym_exec(self, gblState, depth=0, constraints=[]):
-    
+
         environment = gblState.environment
         disassembly = environment.code
         state = gblState.mstate
@@ -329,18 +324,18 @@ class LaserEVM:
                 dpth = int(op[4:])
 
                 try:
-                    temp = state.stack[-dpth-1]
-                except IndexError: # Stack underflow
+                    temp = state.stack[-dpth - 1]
+                except IndexError:  # Stack underflow
                     halt = True
                     continue
 
-                state.stack[-dpth-1] = state.stack[-1]
+                state.stack[-dpth - 1] = state.stack[-1]
                 state.stack[-1] = temp
 
             elif op == 'POP':
                 try:
                     state.stack.pop()
-                except IndexError: # Stack underflow
+                except IndexError:  # Stack underflow
                     halt = True
                     continue
 
@@ -715,9 +710,9 @@ class LaserEVM:
 
                 try:   
                     data = helper.concrete_int_from_bytes(state.memory, offset)
-                except IndexError: # Memory slot not allocated
+                except IndexError:  # Memory slot not allocated
                     data = BitVec("mem_" + str(offset), 256)
-                except TypeError: # Symbolic memory
+                except TypeError:  # Symbolic memory
                     data = state.memory[offset]
 
                 logging.debug("Load from memory[" + str(offset) + "]: " + str(data))
@@ -1043,10 +1038,10 @@ class LaserEVM:
                         logging.info("Dependency loaded: " + callee_address)
 
                     else:
-                         logging.info("Dynamic loader unavailable. Skipping call")
-                         ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
-                         state.stack.append(ret)
-                         continue
+                        logging.info("Dynamic loader unavailable. Skipping call")
+                        ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                        state.stack.append(ret)
+                        continue
 
                 logging.info("Executing " + op + " to: " + callee_address)
 
@@ -1138,7 +1133,7 @@ class LaserEVM:
 
                 state.stack.append(BitVec("retval", 256))
 
-                continue 
+                continue
 
             elif op == 'RETURN':
                 offset, length = state.stack.pop(), state.stack.pop()
@@ -1152,22 +1147,22 @@ class LaserEVM:
                     self.pending_returns[self.last_call_address].append(node.uid)              
 
                 halt = True
-                continue                
+                continue
 
             elif op == 'SUICIDE':
                 halt = True
-                continue                
+                continue
 
             elif op == 'REVERT':
                 if self.last_call_address is not None:
                     self.pending_returns[self.last_call_address].append(node.uid)
 
                 halt = True
-                continue 
+                continue
 
             elif op == 'INVALID':
                 halt = True
-                continue 
+                continue
 
         logging.debug("Returning from node " + str(node.uid))
         return node
