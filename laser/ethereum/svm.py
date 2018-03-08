@@ -1080,7 +1080,7 @@ class LaserEVM:
                 # Attempt to write concrete calldata
 
                 try:
-                    calldata = state.memory[helper.get_concrete_int(meminstart):helper.get_concrete_int(meminstart+meminsz)]
+                    calldata = state.memory[helper.get_concrete_int(meminstart):helper.get_concrete_int(meminstart + meminsz)]
                     calldata_type = CalldataType.CONCRETE
                     logging.debug("calldata: " + str(calldata))
 
@@ -1095,7 +1095,7 @@ class LaserEVM:
 
                 if (op == 'CALL'):
 
-                    callee_environment = Environment(callee_account, environment.active_account.address, calldata, environment.gasprice, value, environment.origin, calldata_type = calldata_type)
+                    callee_environment = Environment(callee_account, BitVecVal(int(environment.active_account.address, 16), 256), calldata, environment.gasprice, value, environment.origin, calldata_type = calldata_type)
                     new_gblState = GlobalState(gblState.accounts, callee_environment, MachineState(gas))
 
                     new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
