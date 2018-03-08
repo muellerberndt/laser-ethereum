@@ -50,6 +50,13 @@ class Account():
         self.address = address
         self.contract_name = contract_name
 
+    def __str__(self):
+        return str(self.as_dict())
+
+    def as_dict(self):
+
+        return {'nonce': self.nonce, 'code': self.code, 'balance': self.balance, 'storage': self.storage}
+
 
 class Environment():
 
@@ -77,6 +84,13 @@ class Environment():
         self.gasprice = gasprice
         self.origin = origin
         self.callvalue = callvalue
+
+    def __str__(self):
+        return str(self.as_dict())
+
+    def as_dict(self):
+
+        return {'active_account': self.active_account, 'sender': self.sender, 'calldata': self.calldata, 'gasprice': self.gasprice, 'callvalue': self.callvalue, 'origin': self.origin, 'calldata_type': self.calldata_type}
 
 
 class MachineState():
@@ -106,6 +120,13 @@ class MachineState():
             raise Exception
 
             # Deduct gas for memory extension... not yet implemented
+
+    def __str__(self):
+        return str(self.as_dict())
+
+    def as_dict(self):
+
+        return {'pc': self.pc, 'stack': self.stack, 'memory': self.memory, 'memsize': self.memsize, 'gas': self.gas}
 
 
 class GlobalState():
