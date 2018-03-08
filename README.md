@@ -45,7 +45,7 @@ laser.sym_exec("0x0000000000000000000000000000000000000000")
 
 ## Inspecting Program States
 
-Laser returns an object containing the state space of the smart contract organized as a graph. Each node in the graph represents a basic block of code being executed, and contains a list of global states - one state for each program counter position. Every node also has an associated set of constraints. A list of edges between nodes along with the constraint on each edge is also provided. This can be used to [draw a control flow graph](https://github.com/ConsenSys/mythril#control-flow-graph).
+LASER returns an object containing the state space of the smart contract organized as a graph. Each node in the graph represents a basic block of code being executed, and contains a list of global states - one state for each program counter position. Every node also has an associated set of constraints. A list of edges between nodes along with the constraint on each edge is also provided. This can be used to [draw a control flow graph](https://github.com/ConsenSys/mythril#control-flow-graph).
 
 Each node contains a list of state objects, each of which contains the complete global state during that point in execution (PC address).
 
@@ -73,7 +73,7 @@ The structure of the machine state and execution environment is largely identica
 The machine state μ is defined as the tuple (g, pc, m, i, s) which are the gas available, the program counter pc ∈ P256, the memory contents, the active number of words in memory (counting continuously from position 0), and the stack contents. The memory contents μm are a series of zeroes of size 256.
 ```
 
-In Laser-Ethereum:
+In LASER:
 
 ```
 >>> state.mstate.as_dict()
@@ -94,7 +94,7 @@ In Laser-Ethereum:
 - Ie, the depth of the present message-call or contract-creation (i.e. the number of CALLs or CREATEs being executed at present).
 ```
 
-In Laser-Ethereum:
+In LASER:
 
 ```
 >>> state.environment.as_dict()
