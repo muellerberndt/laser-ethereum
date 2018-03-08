@@ -1071,7 +1071,7 @@ class LaserEVM:
                 except KeyError:
                     logging.info("Contract " + str(callee_address) + " not loaded.")
                     logging.info((str(self.accounts)))
-                    
+
                     ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                     state.stack.append(ret)
 
@@ -1098,14 +1098,11 @@ class LaserEVM:
                     callee_environment = Environment(callee_account, environment.active_account.address, calldata, environment.gasprice, value, environment.origin, calldata_type = calldata_type)
                     new_gblState = GlobalState(gblState.accounts, callee_environment, MachineState(gas))
 
-                    new_node = self._sym_exec(new_gblState, depth=depth+1, constraints=constraints)
+                    new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
 
                     self.nodes[new_node.uid] = new_node
 
                 elif (op == 'CALLCODE'):
-
-                    callee_environment = Environment(callee_account, environment.active_account.address, calldata, environment.gasprice, value, environment.origin, calldata_type = calldata_type)
-                    new_gblState = GlobalState(gblState.accounts, callee_environment, MachineState(gas))
 
                     temp_module = environment.module
                     temp_callvalue = environment.callvalue
@@ -1117,7 +1114,9 @@ class LaserEVM:
                     environment.caller = environment.address
                     environment.calldata = calldata
 
-                    new_node = self._sym_exec(environment, MachineState(gas), depth=depth+1, constraints=constraints)
+                    new_gblState = GlobalState(gblState.accounts, environment, MachineState(gas))
+
+                    new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
                     environment.module = temp_module
@@ -1133,7 +1132,9 @@ class LaserEVM:
                     environment.code = callee_account.code
                     environment.calldata = calldata
 
-                    new_node = self._sym_exec(environment, MachineState(gas), depth=depth + 1, constraints=constraints)
+                    new_gblState = GlobalState(gblState.accounts, environment, MachineState(gas))
+
+                    new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
                     environment.code = temp_code
