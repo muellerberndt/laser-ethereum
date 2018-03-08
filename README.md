@@ -27,7 +27,7 @@ It contains a list of instructions in the format `{'address': address, 'opcode':
 [{'address': 0, 'opcode': 'PUSH1', 'argument': '0x60'}, {'address': 2, 'opcode': 'PUSH1', 'argument': '0x40'}(...)
 ```
 
-To run the code in the symbolic VM it must be mapped to virtual contract accounts. Each account is constructed with an Ethereum address and assigned a `Disassembly` object (the contract code), plus an optional contract name. The LASER constructor expects a mapping of addresses to account objects. 
+To run the code in the symbolic VM it must be mapped to virtual contract accounts. Each account is constructed with an Ethereum address and a `Disassembly` object (the contract code), plus an optional contract name. The LASER constructor expects a mapping of addresses to account objects. 
 
 ```
 address = "0x0000000000000000000000000000000000000000"
@@ -35,7 +35,7 @@ account = svm.Account(address, disassembly, "Under")
 accounts = {address: account}
 ```
 
-Once initialized, symbolic execution is started with the `fire_lasers(entry_address)` function. The `entry_address` argument specifies the contract to be used as the entrypoint (the other mapped contracts are made available for message calls).
+Once initialized, symbolic execution is started with the `sym_exec(entry_address)` method. The `entry_address` argument specifies the contract to be used as the entrypoint (the other mapped contracts are made available for message calls).
 
 
 ```
