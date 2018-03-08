@@ -1,10 +1,10 @@
-# laser-ethereum
+# LASER-Ethereum
 
 Laser-ethereum is a symbolic virtual machine that runs Ethereum smart contracts. It accurately models most features of the Ethereum virtual machine, including inter-contracts calls.
 
 ## Installing and Running the Symbolic Virtual Machine
 
-Laser-ethereum executes Mythril `Disassembly` objects instead of raw Ethereum bytecode. It is therefore best installed along with [Mythril](https://github.com/ConsenSys/mythril).
+Laser-ethereum runs Mythril `Disassembly` objects instead of raw Ethereum bytecode. It is therefore best installed alongside with [Mythril](https://github.com/ConsenSys/mythril).
 
 ```
 $ pip install mythril
