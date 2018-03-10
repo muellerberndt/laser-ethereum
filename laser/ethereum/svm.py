@@ -325,7 +325,7 @@ class LaserEVM:
             # logging.debug("[" + environment.active_account.contract_name + "] " + helper.get_trace_line(instr, state))
             # slows down execution significantly.
 
-            # stack ops
+            # Stack ops
 
             if op.startswith("PUSH"):
                 value = BitVecVal(int(instr['argument'][2:], 16), 256)
@@ -370,25 +370,25 @@ class LaserEVM:
                     continue
 
                 if (type(op1) == BoolRef):
-                    op1 = If(op1, BitVecVal(1,256), BitVecVal(0,256))
+                    op1 = If(op1, BitVecVal(1, 256), BitVecVal(0, 256))
 
                 if (type(op2) == BoolRef):
-                    op2 = If(op2, BitVecVal(1,256), BitVecVal(0,256))
+                    op2 = If(op2, BitVecVal(1, 256), BitVecVal(0, 256))
 
                 state.stack.append(op1 & op2)
 
             elif op == 'OR':
                 try:
                     op1, op2 = state.stack.pop(), state.stack.pop()
-                except IndexError: # Stack underflow
+                except IndexError:  # Stack underflow
                     halt = True
                     continue
 
                 if (type(op1) == BoolRef):
-                    op1 = If(op1, BitVecVal(1,256), BitVecVal(0,256))
+                    op1 = If(op1, BitVecVal(1, 256), BitVecVal(0, 256))
 
                 if (type(op2) == BoolRef):
-                    op2 = If(op2, BitVecVal(1,256), BitVecVal(0,256))
+                    op2 = If(op2, BitVecVal(1, 256), BitVecVal(0, 256))
 
                 state.stack.append(op1 | op2)
 
@@ -528,7 +528,7 @@ class LaserEVM:
 
             elif op == 'CALLDATALOAD':
                 # unpack 32 bytes from calldata into a word and put it on the stack
-                
+
                 op0 = state.stack.pop()
 
                 try:
@@ -561,7 +561,7 @@ class LaserEVM:
                 else:
                     # symbolic variable
                     state.stack.append(b)
-                                       
+
             elif op == 'CALLDATASIZE':
 
                 if environment.calldata_type == CalldataType.SYMBOLIC:
@@ -615,10 +615,6 @@ class LaserEVM:
 
                         state.memory[mstart] = BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(dstart), 256)
 
-                        # continue
-
-            # Control flow
-
             elif op == 'STOP':
                 if self.last_call_address is not None:
                     self.pending_returns[self.last_call_address].append(node.uid)
@@ -660,17 +656,15 @@ class LaserEVM:
 
                     for i in range(index, index + length):
                         data += helper.get_concrete_int(state.memory[i]).to_bytes(1, byteorder='big')
-                        i += 1 
-                
+                        i += 1
                 except:
 
                     svar = str(state.memory[index])
 
                     svar = svar.replace(" ", "_")
- 
+
                     state.stack.append(BitVec("keccac_" + svar, 256))
                     continue
-                
 
                 logging.debug("SHA3 Data: " + str(data))
 
@@ -776,7 +770,6 @@ class LaserEVM:
 
                 # logging.debug("MEM: " + str(state.memory))
 
-
             elif op == 'MSTORE8':
                 # Is this ever used?
                 op0, value = state.stack.pop(), state.stack.pop()
@@ -834,7 +827,7 @@ class LaserEVM:
                     logging.debug("Invalid jump argument (symbolic address)")
                     halt = True
                     continue
-                except IndexError: # Stack Underflow
+                except IndexError:  # Stack Underflow
                     halt = True
                     continue
 
@@ -873,7 +866,7 @@ class LaserEVM:
                 else:
                     logging.debug("Max depth reached, skipping JUMP")
                     halt = True
-                    continue                    
+                    continue
 
             elif op == 'JUMPI':
                 op0, condition = state.stack.pop(), state.stack.pop()
@@ -1031,7 +1024,7 @@ class LaserEVM:
 
                 try:
 
-                    module = self.accounts[callee_address]
+                    callee_account = self.accounts[callee_address]
 
                 except KeyError:
                     # We have a valid call address, but contract is not in the modules list
@@ -1166,7 +1159,7 @@ class LaserEVM:
                     logging.debug("Return with symbolic length or offset. Not supported")
 
                 if self.last_call_address is not None:
-                    self.pending_returns[self.last_call_address].append(node.uid)              
+                    self.pending_returns[self.last_call_address].append(node.uid)
 
                 halt = True
                 continue
@@ -1182,7 +1175,7 @@ class LaserEVM:
                 halt = True
                 continue
 
-            else:
+            elif op == 'ASSERT_FAIL' or op == 'INVALID':
                 halt = True
                 continue
 
