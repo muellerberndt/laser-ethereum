@@ -1182,7 +1182,7 @@ class LaserEVM:
                 halt = True
                 continue
 
-            elif op == 'INVALID':
+            else:
                 halt = True
                 continue
 
