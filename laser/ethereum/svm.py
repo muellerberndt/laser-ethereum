@@ -296,7 +296,7 @@ class LaserEVM:
 
             logging.info("- Entering function " + environment.active_account.contract_name + ":" + function_name)
 
-            state.pc += 1
+            # state.pc += 1
 
         node.function_name = self.current_func
 
@@ -310,7 +310,9 @@ class LaserEVM:
                 logging.debug("Invalid PC")
                 return node
 
-            # Save state
+            op = instr['opcode']
+
+            # Save state before modifying anything
 
             node.states.append(gblState)
             gblState = self.copy_global_state(gblState)
@@ -318,9 +320,10 @@ class LaserEVM:
             state = gblState.mstate
 
             self.total_states += 1
-            state.pc += 1
 
-            op = instr['opcode']
+            # Point program counter to next instruction
+
+            state.pc += 1
 
             # logging.debug("[" + environment.active_account.contract_name + "] " + helper.get_trace_line(instr, state))
             # slows down execution significantly.
@@ -338,7 +341,6 @@ class LaserEVM:
                     state.stack.append(state.stack[-dpth])
                 except:
                     halt = True
-                    continue
 
             elif op.startswith('SWAP'):
 
@@ -346,51 +348,46 @@ class LaserEVM:
 
                 try:
                     temp = state.stack[-dpth - 1]
+
+                    state.stack[-dpth - 1] = state.stack[-1]
+                    state.stack[-1] = temp
                 except IndexError:  # Stack underflow
                     halt = True
-                    continue
-
-                state.stack[-dpth - 1] = state.stack[-1]
-                state.stack[-1] = temp
 
             elif op == 'POP':
                 try:
                     state.stack.pop()
                 except IndexError:  # Stack underflow
                     halt = True
-                    continue
 
             # Bitwise ops
 
             elif op == 'AND':
                 try:
                     op1, op2 = state.stack.pop(), state.stack.pop()
-                except IndexError: # Stack underflow
+                    if (type(op1) == BoolRef):
+                        op1 = If(op1, BitVecVal(1, 256), BitVecVal(0, 256))
+
+                    if (type(op2) == BoolRef):
+                        op2 = If(op2, BitVecVal(1, 256), BitVecVal(0, 256))
+
+                    state.stack.append(op1 & op2)
+                except IndexError:  # Stack underflow
                     halt = True
-                    continue
-
-                if (type(op1) == BoolRef):
-                    op1 = If(op1, BitVecVal(1, 256), BitVecVal(0, 256))
-
-                if (type(op2) == BoolRef):
-                    op2 = If(op2, BitVecVal(1, 256), BitVecVal(0, 256))
-
-                state.stack.append(op1 & op2)
 
             elif op == 'OR':
                 try:
                     op1, op2 = state.stack.pop(), state.stack.pop()
+
+                    if (type(op1) == BoolRef):
+                        op1 = If(op1, BitVecVal(1, 256), BitVecVal(0, 256))
+
+                    if (type(op2) == BoolRef):
+                        op2 = If(op2, BitVecVal(1, 256), BitVecVal(0, 256))
+
+                    state.stack.append(op1 | op2)
                 except IndexError:  # Stack underflow
                     halt = True
-                    continue
-
-                if (type(op1) == BoolRef):
-                    op1 = If(op1, BitVecVal(1, 256), BitVecVal(0, 256))
-
-                if (type(op2) == BoolRef):
-                    op2 = If(op2, BitVecVal(1, 256), BitVecVal(0, 256))
-
-                state.stack.append(op1 | op2)
 
             elif op == 'XOR':
                 state.stack.append(state.stack.pop() ^ state.stack.pop())
@@ -399,7 +396,7 @@ class LaserEVM:
                 state.stack.append(TT256M1 - state.stack.pop())
 
             elif op == 'BYTE':
-                s0, s1 = state.stack.pop(), state.stack.pop()  
+                s0, s1 = state.stack.pop(), state.stack.pop()
 
                 state.stack.append(BitVecVal(0, 256))
 
@@ -415,9 +412,7 @@ class LaserEVM:
                 state.stack.append(helper.pop_bitvec(state) * helper.pop_bitvec(state))
 
             elif op == 'DIV':
-                s0, s1 = helper.pop_bitvec(state), helper.pop_bitvec(state)
-
-                state.stack.append(UDiv(s0, s1))
+                state.stack.append(UDiv(helper.pop_bitvec(state), helper.pop_bitvec(state)))
 
             elif op == 'MOD':
                 s0, s1 = helper.pop_bitvec(state), helper.pop_bitvec(state)
@@ -460,18 +455,18 @@ class LaserEVM:
                 try:
                     s0 = get_concrete_int(s0)
                     s1 = get_concrete_int(s1)
+
+                    if s0 <= 31:
+                        testbit = s0 * 8 + 7
+                        if s1 & (1 << testbit):
+                            state.stack.append(s1 | (TT256 - (1 << testbit)))
+                        else:
+                            state.stack.append(s1 & ((1 << testbit) - 1))
+                    else:
+                        state.stack.append(s1)    
                 except:
                     halt = True
                     continue
-
-                if s0 <= 31:
-                    testbit = s0 * 8 + 7
-                    if s1 & (1 << testbit):
-                        state.stack.append(s1 | (TT256 - (1 << testbit)))
-                    else:
-                        state.stack.append(s1 & ((1 << testbit) - 1))
-                else:
-                    state.stack.append(s1)
 
             # Comparisons
 
@@ -515,9 +510,9 @@ class LaserEVM:
                 val = state.stack.pop()
 
                 if (type(val) == BoolRef):
-                   exp = val == False
-                else:   
-                   exp = val == 0
+                    exp = val == False
+                else:
+                    exp = val == 0
 
                 state.stack.append(exp)
 
@@ -533,13 +528,12 @@ class LaserEVM:
 
                 try:
                     offset = helper.get_concrete_int(simplify(op0))
+                    b = environment.calldata[offset]
+
                 except AttributeError:
                     logging.debug("CALLDATALOAD: Unsupported symbolic index")
                     state.stack.append(BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(op0), 256))
-                    continue
-
-                try:
-                    b = environment.calldata[offset]
+                    continue               
                 except IndexError:
                     logging.debug("Calldata not set, using symbolic variable instead")
                     state.stack.append(BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(op0), 256))
@@ -557,7 +551,7 @@ class LaserEVM:
                         state.stack.append(BitVecVal(int.from_bytes(val, byteorder='big'), 256))
 
                     except:
-                        state.stack.append(b) 
+                        state.stack.append(b)
                 else:
                     # symbolic variable
                     state.stack.append(b)
@@ -876,8 +870,6 @@ class LaserEVM:
                 except:
                     logging.debug("Skipping JUMPI to invalid destination.")
 
-                logging.debug("JUMP to: " + str(jump_addr))
-
                 if (depth < self.max_depth):
 
                     i = helper.get_instruction_index(disassembly.instruction_list, jump_addr)
@@ -888,41 +880,36 @@ class LaserEVM:
                     else:
                         instr = disassembly.instruction_list[i]
 
-                        # Add new node for condition == True
-
                         if instr['opcode'] != "JUMPDEST":
                             logging.debug("Invalid jump destination: " + str(jump_addr))
+                            halt = True
+                            continue
 
-                        else:
+                        elif (type(condition) == BoolRef):
 
-                            if (type(condition) == bool):
-                                logging.debug("BOOL CONDITION TYPE")
-                                # continue
+                            if (self.can_jump(jump_addr)):
 
-                            elif (type(condition) == BoolRef):
+                                # Create new node for condition == True
 
-                                if (self.can_jump(jump_addr)):
+                                new_gblState = self.copy_global_state(gblState)
+                                new_gblState.mstate.pc = i
 
-                                    new_gblState = self.copy_global_state(gblState)
-                                    new_gblState.mstate.pc = i
+                                new_constraints = copy.deepcopy(constraints)
+                                new_constraints.append(condition)
 
-                                    new_constraints = copy.deepcopy(constraints)
-                                    new_constraints.append(condition)
+                                new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=new_constraints)
+                                self.nodes[new_node.uid] = new_node
 
-                                    new_node = self._sym_exec(new_gblState, depth=depth+1, constraints=new_constraints)
-                                    self.nodes[new_node.uid] = new_node
-
-                                    self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
-
-                                else:
-                                    logging.debug("JUMP target limit reached (JUMPI)")
+                                self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
 
                             else:
-                                logging.debug("Invalid condition: " + str(condition) + "(type " + str(type(condition)) + ")")
-                                halt = True
-                                continue 
+                                logging.debug("JUMP target limit reached (JUMPI)")
 
-                        node.states.append(gblState)
+                        else:
+                            logging.debug("Invalid condition: " + str(condition) + "(type " + str(type(condition)) + ")")
+                            halt = True
+                            continue
+
                         new_gblState = copy.deepcopy(gblState)
 
                         if (type(condition) == BoolRef):
@@ -943,7 +930,6 @@ class LaserEVM:
 
                 else:
                     logging.debug("Max depth reached, skipping JUMPI")
-
 
             elif op == 'PC':
                 state.stack.append(state.pc - 1)
@@ -1020,7 +1006,7 @@ class LaserEVM:
 
                     ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                     state.stack.append(ret)
-                    continue
+                    # continue
 
                 try:
 
@@ -1067,7 +1053,6 @@ class LaserEVM:
 
                     ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                     state.stack.append(ret)
-
                     continue
 
                 # Attempt to write concrete calldata
@@ -1148,7 +1133,7 @@ class LaserEVM:
 
                 state.stack.append(BitVec("retval", 256))
 
-                continue
+                # continue
 
             elif op == 'RETURN':
                 offset, length = state.stack.pop(), state.stack.pop()
@@ -1162,22 +1147,22 @@ class LaserEVM:
                     self.pending_returns[self.last_call_address].append(node.uid)
 
                 halt = True
-                continue
+                # continue
 
             elif op == 'SUICIDE':
                 halt = True
-                continue
+                # continue
 
             elif op == 'REVERT':
                 if self.last_call_address is not None:
                     self.pending_returns[self.last_call_address].append(node.uid)
 
                 halt = True
-                continue
+                # continue
 
             elif op == 'ASSERT_FAIL' or op == 'INVALID':
                 halt = True
-                continue
+                # continue
 
         logging.debug("Returning from node " + str(node.uid))
         return node
