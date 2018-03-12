@@ -2,7 +2,7 @@ from laser.ethereum import helper
 from ethereum import utils
 from enum import Enum
 from flags import Flags
-from z3 import BitVec, BitVecNumRef, BitVecVal, BoolRef, If, Not, UDiv, URem
+from z3 import *
 import binascii
 import copy
 import logging
@@ -977,7 +977,13 @@ class LaserEVM:
 
                         # attempt to read the contract address from instance storage
 
-                        callee_address = self.dynamic_loader.read_storage(environment.active_account.address, idx)
+                        try:
+                            callee_address = self.dynamic_loader.read_storage(environment.active_account.address, idx)
+                        except:
+                            logging.debug("Error accessing contract storage.")
+                            ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                            state.stack.append(ret)
+                            continue
 
                         # testrpc simply returns the address, geth response is more elaborate.
 
@@ -1020,7 +1026,10 @@ class LaserEVM:
 
                         logging.info("Attempting to load dependency")
 
-                        code = self.dynamic_loader.dynld(environment.active_account.address, callee_address)
+                        try:
+                            code = self.dynamic_loader.dynld(environment.active_account.address, callee_address)
+                        except Exception as e:
+                            logging.info("Unable to execute dynamic loader.")
 
                         if code is None:
 
