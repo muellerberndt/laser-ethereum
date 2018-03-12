@@ -153,6 +153,11 @@ for drawing a nice control flow graph.
 '''
 
 
+class NodeFlags(Flags):
+    FUNC_ENTRY = 1
+    CALL_RETURN = 2
+
+
 class Node:
 
     def __init__(self, contract_name, start_addr=0, constraints=[]):
@@ -161,6 +166,7 @@ class Node:
         self.states = []
         self.constraints = constraints
         self.function_name = "unknown"
+        self.flags = NodeFlags()
 
         # Self-assign a unique ID
 
@@ -911,7 +917,7 @@ class LaserEVM:
                             halt = True
                             continue
 
-                        new_gblState = copy.deepcopy(gblState)
+                        new_gblState = self.copy_global_state(gblState)
 
                         if (type(condition) == BoolRef):
                             negated = Not(condition)
@@ -1130,7 +1136,7 @@ class LaserEVM:
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                 state.stack.append(ret)
 
-                new_gblState = copy.deepcopy(gblState)
+                new_gblState = self.copy_global_state(gblState)
                 new_node = self._sym_exec(gblState, depth=depth + 1, constraints=constraints)
 
                 self.nodes[new_node.uid] = new_node
