@@ -1,12 +1,12 @@
 from laser.ethereum import helper
-from ethereum import utils, opcodes
+from ethereum import utils
 from enum import Enum
-from z3 import *
-import re
+from flags import Flags
+from z3 import BitVec, BitVecNumRef, BitVecVal, BoolRef, If, Not, UDiv, URem
 import binascii
 import copy
 import logging
-from flags import Flags
+import re
 
 
 TT256 = 2 ** 256
@@ -300,10 +300,9 @@ class LaserEVM:
 
             function_name = disassembly.addr_to_func[start_addr]
             self.current_func = function_name
+            node.flags |= NodeFlags.FUNC_ENTRY
 
             logging.info("- Entering function " + environment.active_account.contract_name + ":" + function_name)
-
-            # state.pc += 1
 
         node.function_name = self.current_func
 
@@ -460,8 +459,8 @@ class LaserEVM:
                 s0, s1 = state.stack.pop(), state.stack.pop()
 
                 try:
-                    s0 = get_concrete_int(s0)
-                    s1 = get_concrete_int(s1)
+                    s0 = helper.get_concrete_int(s0)
+                    s1 = helper.get_concrete_int(s1)
 
                     if s0 <= 31:
                         testbit = s0 * 8 + 7
@@ -503,10 +502,10 @@ class LaserEVM:
                 op2 = state.stack.pop()
 
                 if(type(op1) == BoolRef):
-                    op1 = If(op1, BitVecVal(1,256), BitVecVal(0,256))
+                    op1 = If(op1, BitVecVal(1, 256), BitVecVal(0, 256))
 
                 if(type(op2) == BoolRef):
-                    op2 = If(op2, BitVecVal(1,256), BitVecVal(0,256))
+                    op2 = If(op2, BitVecVal(1, 256), BitVecVal(0, 256))
 
                 exp = op1 == op2
 
@@ -667,11 +666,8 @@ class LaserEVM:
                     state.stack.append(BitVec("keccac_" + svar, 256))
                     continue
 
-                logging.debug("SHA3 Data: " + str(data))
-
                 keccac = utils.sha3(utils.bytearray_to_bytestr(data))
-
-                logging.debug("SHA3 Hash: " + str(binascii.hexlify(keccac)))
+                logging.debug("Computed SHA3 Hash: " + str(binascii.hexlify(keccac)))
 
                 state.stack.append(BitVecVal(helper.concrete_int_from_bytes(keccac, 0), 256))
 
@@ -712,7 +708,7 @@ class LaserEVM:
                 state.stack.append(BitVec("block_gaslimit", 256))
 
             elif op == 'MLOAD':
-                
+
                 op0 = state.stack.pop()
 
                 logging.debug("MLOAD[" + str(op0) + "]")
@@ -724,7 +720,7 @@ class LaserEVM:
                     data = BitVec("mem_" + str(op0), 256)
                     continue
 
-                try:   
+                try:
                     data = helper.concrete_int_from_bytes(state.memory, offset)
                 except IndexError:  # Memory slot not allocated
                     data = BitVec("mem_" + str(offset), 256)
@@ -769,10 +765,7 @@ class LaserEVM:
                         logging.debug("Invalid memory access")
                         continue
 
-                # logging.debug("MEM: " + str(state.memory))
-
             elif op == 'MSTORE8':
-                # Is this ever used?
                 op0, value = state.stack.pop(), state.stack.pop()
 
                 try:
@@ -982,7 +975,7 @@ class LaserEVM:
                         idx = int(m.group(1))
                         logging.info("Dynamic contract address at storage index " + str(idx))
 
-                        # attempt to read the contract address from instance storage 
+                        # attempt to read the contract address from instance storage
 
                         callee_address = self.dynamic_loader.read_storage(environment.active_account.address, idx)
 
@@ -1079,7 +1072,7 @@ class LaserEVM:
 
                 if (op == 'CALL'):
 
-                    callee_environment = Environment(callee_account, BitVecVal(int(environment.active_account.address, 16), 256), calldata, environment.gasprice, value, environment.origin, calldata_type = calldata_type)
+                    callee_environment = Environment(callee_account, BitVecVal(int(environment.active_account.address, 16), 256), calldata, environment.gasprice, value, environment.origin, calldata_type=calldata_type)
                     new_gblState = GlobalState(gblState.accounts, callee_environment, MachineState(gas))
 
                     new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
@@ -1138,6 +1131,7 @@ class LaserEVM:
 
                 new_gblState = self.copy_global_state(gblState)
                 new_node = self._sym_exec(gblState, depth=depth + 1, constraints=constraints)
+                new_node.flags |= NodeFlags.FUNC_RETURN
 
                 self.nodes[new_node.uid] = new_node
 
@@ -1147,7 +1141,6 @@ class LaserEVM:
                 state.stack.append(BitVec("retval", 256))
 
                 halt = True
-#                continue
 
             elif op == 'RETURN':
                 offset, length = state.stack.pop(), state.stack.pop()
@@ -1161,22 +1154,18 @@ class LaserEVM:
                     self.pending_returns[self.last_call_address].append(node.uid)
 
                 halt = True
-#                continue
 
             elif op == 'SUICIDE':
                 halt = True
-#               continue
 
             elif op == 'REVERT':
                 if self.last_call_address is not None:
                     self.pending_returns[self.last_call_address].append(node.uid)
 
                 halt = True
-#               continue
 
             elif op == 'ASSERT_FAIL' or op == 'INVALID':
                 halt = True
-#               continue
 
         logging.debug("Returning from node " + str(node.uid))
         return node
