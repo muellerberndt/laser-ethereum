@@ -6,6 +6,7 @@ import re
 import binascii
 import copy
 import logging
+from flags import Flags
 
 
 TT256 = 2 ** 256
@@ -995,7 +996,6 @@ class LaserEVM:
                         logging.debug("Invalid address: " + str(callee_address))
                         ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                         state.stack.append(ret)
-
                         continue
 
                 if (int(callee_address, 16) < 5):
@@ -1006,7 +1006,7 @@ class LaserEVM:
 
                     ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                     state.stack.append(ret)
-                    # continue
+                    continue
 
                 try:
 
@@ -1120,11 +1120,18 @@ class LaserEVM:
 
                 self.edges.append(Edge(node.uid, new_node.uid, JumpType.CALL))
 
+                '''
+                There may be multiple possible returns from the callee contract. Currently, we don't create separate nodes on the CFG
+                for each of them. Instead, a single "return node" is created and a separate edge is added for each return path.
+                The return value is always symbolic.
+
+                '''
+
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                 state.stack.append(ret)
 
                 new_gblState = copy.deepcopy(gblState)
-                new_node = self._sym_exec(gblState, depth=depth+1, constraints=constraints)
+                new_node = self._sym_exec(gblState, depth=depth + 1, constraints=constraints)
 
                 self.nodes[new_node.uid] = new_node
 
@@ -1133,13 +1140,14 @@ class LaserEVM:
 
                 state.stack.append(BitVec("retval", 256))
 
-                # continue
+                halt = True
+#                continue
 
             elif op == 'RETURN':
                 offset, length = state.stack.pop(), state.stack.pop()
 
                 try:
-                    self.last_returned = state.memory[helper.get_concrete_int(offset):helper.get_concrete_int(offset+length)]
+                    self.last_returned = state.memory[helper.get_concrete_int(offset):helper.get_concrete_int(offset + length)]
                 except AttributeError:
                     logging.debug("Return with symbolic length or offset. Not supported")
 
@@ -1147,22 +1155,22 @@ class LaserEVM:
                     self.pending_returns[self.last_call_address].append(node.uid)
 
                 halt = True
-                # continue
+#                continue
 
             elif op == 'SUICIDE':
                 halt = True
-                # continue
+#               continue
 
             elif op == 'REVERT':
                 if self.last_call_address is not None:
                     self.pending_returns[self.last_call_address].append(node.uid)
 
                 halt = True
-                # continue
+#               continue
 
             elif op == 'ASSERT_FAIL' or op == 'INVALID':
                 halt = True
-                # continue
+#               continue
 
         logging.debug("Returning from node " + str(node.uid))
         return node

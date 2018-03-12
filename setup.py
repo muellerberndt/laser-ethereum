@@ -59,7 +59,8 @@ setup(
     packages=find_packages(exclude=['contrib', 'docs', 'tests']),
 
     install_requires=[
-        'z3-solver>=4.5'
+        'z3-solver>=4.5',
+        'py-flags'
     ],
 
     python_requires='>=3.5',
