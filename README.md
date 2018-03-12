@@ -123,3 +123,9 @@ callvalue == 0
 
 - Gas usage is not yet fully simulated
 - Native contracts are not yet implemented
+
+## What does LASER stand for?
+
+[Light amplification by stimulated emission of radiation](https://en.wikipedia.org/wiki/Laser). The sole reason for calling this software LASER was so there could be a method called `fire_lasers`.
+
+
