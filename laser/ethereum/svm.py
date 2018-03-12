@@ -1140,7 +1140,7 @@ class LaserEVM:
 
                 new_gblState = self.copy_global_state(gblState)
                 new_node = self._sym_exec(gblState, depth=depth + 1, constraints=constraints)
-                new_node.flags |= NodeFlags.FUNC_RETURN
+                new_node.flags |= NodeFlags.CALL_RETURN
 
                 self.nodes[new_node.uid] = new_node
 
