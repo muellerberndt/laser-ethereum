@@ -278,8 +278,6 @@ class LaserEVM:
         logging.info("Execution complete")
         logging.info("%d nodes, %d edges, %d total states", len(self.nodes), len(self.edges), self.total_states)
 
-        for e in self.edges:
-            print("%d -> %d %s" % (e.node_from, e.node_to, e.type))
 
     def _sym_exec(self, gblState, depth=0, constraints=[]):
 
@@ -1147,10 +1145,7 @@ class LaserEVM:
 
                 self.nodes[new_node.uid] = new_node
 
-                logging.debug("RETURN from CALL. Pending returns: " + str(self.pending_returns[return_address]))
-
                 for ret_uid in self.pending_returns[return_address]:
-                    logging.debug("[RETURN] Create edge: %d to %d" % (ret_uid, new_node.uid))
                     self.edges.append(Edge(ret_uid, new_node.uid, JumpType.RETURN))
 
                 state.stack.append(BitVec("retval", 256))
