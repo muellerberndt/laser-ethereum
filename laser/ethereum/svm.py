@@ -222,9 +222,9 @@ class LaserEVM:
         self.edges = []
         self.current_func = ""
         self.current_func_addr = 0
-        self.last_call_address = None
-        self.last_jump_targets = []
+        self.call_stack = []
         self.pending_returns = {}
+        self.last_jump_targets = []
         self.total_states = 0
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
@@ -276,7 +276,10 @@ class LaserEVM:
         node = self._sym_exec(gblState)
         self.nodes[node.uid] = node
         logging.info("Execution complete")
-        logging.info(str(len(self.nodes)) + " nodes, " + str(len(self.edges)) + " edges, " + str(self.total_states) + " total states")
+        logging.info("%d nodes, %d edges, %d total states", len(self.nodes), len(self.edges), self.total_states)
+
+        for e in self.edges:
+            print("%d -> %d %s" % (e.node_from, e.node_to, e.type))
 
     def _sym_exec(self, gblState, depth=0, constraints=[]):
 
@@ -316,8 +319,6 @@ class LaserEVM:
                 logging.debug("Invalid PC")
                 return node
 
-            op = instr['opcode']
-
             # Save state before modifying anything
 
             node.states.append(gblState)
@@ -330,6 +331,7 @@ class LaserEVM:
             # Point program counter to next instruction
 
             state.pc += 1
+            op = instr['opcode']
 
             # logging.debug("[" + environment.active_account.contract_name + "] " + helper.get_trace_line(instr, state))
             # slows down execution significantly.
@@ -616,8 +618,8 @@ class LaserEVM:
                         state.memory[mstart] = BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(dstart), 256)
 
             elif op == 'STOP':
-                if self.last_call_address is not None:
-                    self.pending_returns[self.last_call_address].append(node.uid)
+                if len(self.call_stack):
+                    self.pending_returns[self.call_stack[-1]].append(node.uid)
 
                 halt = True
                 continue
@@ -843,7 +845,7 @@ class LaserEVM:
                             new_gblState = self.copy_global_state(gblState)
                             new_gblState.mstate.pc = i
 
-                            new_node = self._sym_exec(new_gblState, depth=depth+1, constraints=constraints)
+                            new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
                             self.nodes[new_node.uid] = new_node
 
                             self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
@@ -887,7 +889,7 @@ class LaserEVM:
 
                         elif (type(condition) == BoolRef):
 
-                            if (self.can_jump(jump_addr)):
+                            if self.can_jump(jump_addr) and not is_false(simplify(condition)):
 
                                 # Create new node for condition == True
 
@@ -899,11 +901,10 @@ class LaserEVM:
 
                                 new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=new_constraints)
                                 self.nodes[new_node.uid] = new_node
-
                                 self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
 
                             else:
-                                logging.debug("JUMP target limit reached (JUMPI)")
+                                logging.debug("JUMP target limit reached or contradiction detected.")
 
                         else:
                             logging.debug("Invalid condition: " + str(condition) + "(type " + str(type(condition)) + ")")
@@ -917,13 +918,14 @@ class LaserEVM:
                         else:
                             negated = condition == 0
 
-                        new_constraints = copy.deepcopy(constraints)
-                        new_constraints.append(negated)
+                        if not is_false(simplify(negated)):
 
-                        new_node = self._sym_exec(new_gblState, depth=depth, constraints=new_constraints)
-                        self.nodes[new_node.uid] = new_node
+                            new_constraints = copy.deepcopy(constraints)
+                            new_constraints.append(negated)
 
-                        self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, negated))
+                            new_node = self._sym_exec(new_gblState, depth=depth, constraints=new_constraints)
+                            self.nodes[new_node.uid] = new_node
+                            self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, negated))
 
                         halt = True
                         continue
@@ -981,7 +983,7 @@ class LaserEVM:
                             callee_address = self.dynamic_loader.read_storage(environment.active_account.address, idx)
                         except:
                             logging.debug("Error accessing contract storage.")
-                            ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                            ret = BitVec("retval_" + str(instr['address']), 256)
                             state.stack.append(ret)
                             continue
 
@@ -993,13 +995,13 @@ class LaserEVM:
 
                     else:
                         logging.info("Unable to resolve address from storage.")
-                        ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                        ret = BitVec("retval_" + str(instr['address']), 256)
                         state.stack.append(ret)
                         continue
 
                 if not re.match(r"^0x[0-9a-f]{40}", callee_address):
                         logging.debug("Invalid address: " + str(callee_address))
-                        ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                        ret = BitVec("retval_" + str(instr['address']), 256)
                         state.stack.append(ret)
                         continue
 
@@ -1009,7 +1011,7 @@ class LaserEVM:
 
                     # Todo: Implement native contracts
 
-                    ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                    ret = BitVec("retval_" + str(instr['address']), 256)
                     state.stack.append(ret)
                     continue
 
@@ -1034,7 +1036,7 @@ class LaserEVM:
                         if code is None:
 
                             logging.info("No code returned, not a contract account?")
-                            ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                            ret = BitVec("retval_" + str(instr['address']), 256)
                             state.stack.append(ret)
                             continue
 
@@ -1047,7 +1049,7 @@ class LaserEVM:
 
                     else:
                         logging.info("Dynamic loader unavailable. Skipping call")
-                        ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                        ret = BitVec("retval_" + str(instr['address']), 256)
                         state.stack.append(ret)
                         continue
 
@@ -1059,7 +1061,7 @@ class LaserEVM:
                     logging.info("Contract " + str(callee_address) + " not loaded.")
                     logging.info((str(self.accounts)))
 
-                    ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
+                    ret = BitVec("retval_" + str(instr['address']), 256)
                     state.stack.append(ret)
                     continue
 
@@ -1076,8 +1078,8 @@ class LaserEVM:
                     calldata_type = CalldataType.SYMBOLIC
                     calldata = []
 
-                self.last_call_address = disassembly.instruction_list[state.pc]['address']
-                self.pending_returns[self.last_call_address] = []
+                self.call_stack.append(instr['address'])
+                self.pending_returns[instr['address']] = []
 
                 if (op == 'CALL'):
 
@@ -1132,11 +1134,12 @@ class LaserEVM:
                 There may be multiple possible returns from the callee contract. Currently, we don't create separate nodes on the CFG
                 for each of them. Instead, a single "return node" is created and a separate edge is added for each return path.
                 The return value is always symbolic.
-
                 '''
 
                 ret = BitVec("retval_" + str(disassembly.instruction_list[state.pc]['address']), 256)
                 state.stack.append(ret)
+
+                return_address = self.call_stack.pop()
 
                 new_gblState = self.copy_global_state(gblState)
                 new_node = self._sym_exec(gblState, depth=depth + 1, constraints=constraints)
@@ -1144,7 +1147,10 @@ class LaserEVM:
 
                 self.nodes[new_node.uid] = new_node
 
-                for ret_uid in self.pending_returns[self.last_call_address]:
+                logging.debug("RETURN from CALL. Pending returns: " + str(self.pending_returns[return_address]))
+
+                for ret_uid in self.pending_returns[return_address]:
+                    logging.debug("[RETURN] Create edge: %d to %d" % (ret_uid, new_node.uid))
                     self.edges.append(Edge(ret_uid, new_node.uid, JumpType.RETURN))
 
                 state.stack.append(BitVec("retval", 256))
@@ -1159,8 +1165,8 @@ class LaserEVM:
                 except AttributeError:
                     logging.debug("Return with symbolic length or offset. Not supported")
 
-                if self.last_call_address is not None:
-                    self.pending_returns[self.last_call_address].append(node.uid)
+                if len(self.call_stack):
+                    self.pending_returns[self.call_stack[-1]].append(node.uid)
 
                 halt = True
 
@@ -1168,12 +1174,15 @@ class LaserEVM:
                 halt = True
 
             elif op == 'REVERT':
-                if self.last_call_address is not None:
-                    self.pending_returns[self.last_call_address].append(node.uid)
+                if len(self.call_stack):
+                    self.pending_returns[self.call_stack[-1]].append(node.uid)
 
                 halt = True
 
             elif op == 'ASSERT_FAIL' or op == 'INVALID':
+                if len(self.call_stack):
+                    self.pending_returns[self.call_stack[-1]].append(node.uid)
+
                 halt = True
 
         logging.debug("Returning from node " + str(node.uid))
