@@ -224,7 +224,6 @@ class LaserEVM:
         self.current_func_addr = 0
         self.call_stack = []
         self.pending_returns = {}
-        self.last_jump_targets = []
         self.total_states = 0
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
@@ -237,20 +236,6 @@ class LaserEVM:
         environment = copy.copy(gblState.environment)
 
         return GlobalState(self.accounts, environment, mstate)
-
-    def can_jump(self, jump_addr):
-
-        # Loop detection
-
-        if jump_addr in self.last_jump_targets:
-            return False
-
-        self.last_jump_targets.append(jump_addr)
-
-        if len(self.last_jump_targets) > 4:
-            self.last_jump_targets.pop(0)
-
-        return True
 
     def sym_exec(self, main_address):
 
@@ -838,35 +823,27 @@ class LaserEVM:
 
                     if opcode == "JUMPDEST":
 
-                        if (self.can_jump(jump_addr)):
+                        new_gblState = self.copy_global_state(gblState)
+                        new_gblState.mstate.pc = i
 
-                            new_gblState = self.copy_global_state(gblState)
-                            new_gblState.mstate.pc = i
+                        new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
+                        self.nodes[new_node.uid] = new_node
 
-                            new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
-                            self.nodes[new_node.uid] = new_node
+                        self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
+                        halt = True
+                        continue
 
-                            self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
-                            halt = True
-                            continue
-                        else:
-                            logging.debug("JUMP target limit reached")
-                            halt = True
-                            continue
                     else:
                         logging.debug("Skipping JUMP to invalid destination (not JUMPDEST): " + str(jump_addr))
                         halt = True
-                        continue
+                        # continue
                 else:
                     logging.debug("Max depth reached, skipping JUMP")
                     halt = True
-                    continue
+                    # continue
 
             elif op == 'JUMPI':
                 op0, condition = state.stack.pop(), state.stack.pop()
-
-                logging.debug("JUMP condition: " + str(condition))
-                logging.debug("calldata: " + str(environment.calldata))
 
                 try:
                     jump_addr = helper.get_concrete_int(op0)
@@ -890,7 +867,7 @@ class LaserEVM:
 
                         elif (type(condition) == BoolRef):
 
-                            if self.can_jump(jump_addr) and not is_false(simplify(condition)):
+                            if not is_false(simplify(condition)):
 
                                 # Create new node for condition == True
 
@@ -905,7 +882,7 @@ class LaserEVM:
                                 self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
 
                             else:
-                                logging.debug("JUMP target limit reached or contradiction detected.")
+                                logging.debug("Pruned unreachable states.")
 
                         else:
                             logging.debug("Invalid condition: " + str(condition) + "(type " + str(type(condition)) + ")")
@@ -929,7 +906,7 @@ class LaserEVM:
                             self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, negated))
 
                         halt = True
-                        continue
+                        # continue
 
                 else:
                     logging.debug("Max depth reached, skipping JUMPI")
@@ -1098,12 +1075,10 @@ class LaserEVM:
 
                 elif (op == 'CALLCODE'):
 
-                    temp_module = environment.module
                     temp_callvalue = environment.callvalue
                     temp_caller = environment.caller
                     temp_calldata = environment.calldata
 
-                    environment.code = callee_account.code
                     environment.callvalue = value
                     environment.caller = environment.address
                     environment.calldata = calldata
@@ -1113,13 +1088,11 @@ class LaserEVM:
                     new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
                     self.nodes[new_node.uid] = new_node
 
-                    environment.module = temp_module
                     environment.callvalue = temp_callvalue
                     environment.caller = temp_caller
                     environment.calldata = temp_calldata
 
                 elif (op == 'DELEGATECALL'):
-
                     temp_code = environment.code
                     temp_calldata = environment.calldata
 
