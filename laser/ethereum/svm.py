@@ -539,14 +539,13 @@ class LaserEVM:
                 except AttributeError:
                     logging.debug("CALLDATALOAD: Unsupported symbolic index")
                     state.stack.append(BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(op0), 256))
-                    continue               
+                    continue
                 except IndexError:
                     logging.debug("Calldata not set, using symbolic variable instead")
                     state.stack.append(BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(op0), 256))
                     continue
 
                 if type(b) == int:
-                    # 32 byte concrete value
 
                     val = b''
 
@@ -554,13 +553,14 @@ class LaserEVM:
                         for i in range(offset, offset + 32):
                             val += environment.calldata[i].to_bytes(1, byteorder='big')
 
+                        logging.debug("Final value: " + str(int.from_bytes(val, byteorder='big')))
                         state.stack.append(BitVecVal(int.from_bytes(val, byteorder='big'), 256))
 
                     except:
-                        state.stack.append(b)
+                        state.stack.append(BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(op0), 256))
                 else:
                     # symbolic variable
-                    state.stack.append(b)
+                    state.stack.append(BitVec("calldata_" + str(environment.active_account.contract_name) + "_" + str(op0), 256))
 
             elif op == 'CALLDATASIZE':
 
@@ -865,6 +865,9 @@ class LaserEVM:
             elif op == 'JUMPI':
                 op0, condition = state.stack.pop(), state.stack.pop()
 
+                logging.debug("JUMP condition: " + str(condition))
+                logging.debug("calldata: " + str(environment.calldata))
+
                 try:
                     jump_addr = helper.get_concrete_int(op0)
                 except:
@@ -1063,12 +1066,17 @@ class LaserEVM:
                     state.stack.append(ret)
                     continue
 
-                # Attempt to write concrete calldata
-
                 try:
+                    # TODO: This only allows for either fully concrete or fully symbolic calldata.
+                    # Improve management of memory and callata to support a mix between both types.
+
                     calldata = state.memory[helper.get_concrete_int(meminstart):helper.get_concrete_int(meminstart + meminsz)]
+
+                    if (len(calldata) < 32):
+                        calldata += [0] * (32 - len(calldata))
+
                     calldata_type = CalldataType.CONCRETE
-                    logging.debug("calldata: " + str(calldata))
+                    logging.debug("Calldata: " + str(calldata))
 
                 except AttributeError:
 
