@@ -227,20 +227,15 @@ class LaserEVM:
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
         self.max_depth = max_depth
-        self.dirty_storage = False
 
         logging.info("LASER EVM initialized with dynamic loader: " + str(dynamic_loader))
 
     def copy_global_state(self, gblState):
         mstate = copy.deepcopy(gblState.mstate)
+        environment = copy.copy(gblState.environment)
+        accounts = copy.copy(gblState.accounts)
 
-        if self.dirty_storage:
-            accounts = copy.deepcopy(gblState.accounts)
-            self.dirty_storage = False
-        else:
-            accounts = copy.copy(gblState.accounts)
-
-        return GlobalState(accounts, gblState.environment, mstate)
+        return GlobalState(accounts, environment, mstate)
 
     def sym_exec(self, main_address):
 
@@ -793,8 +788,15 @@ class LaserEVM:
                     index = str(index)
 
                 try:
+                    # Create a fresh copy of the account object before modifying storage
+
+                    for k in gblState.accounts:
+                        if gblState.accounts[k] == gblState.environment.active_account:
+                            gblState.accounts[k] = copy.deepcopy(gblState.accounts[k])
+                            gblState.environment.active_account = gblState.accounts[k]
+                            break
+
                     gblState.environment.active_account.storage[index] = value
-                    self.dirty_storage = True
                 except KeyError:
                     logging.debug("Error writing to storage: Invalid index")
                     continue
