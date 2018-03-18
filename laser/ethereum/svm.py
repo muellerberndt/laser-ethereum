@@ -218,7 +218,6 @@ class LaserEVM:
     def __init__(self, accounts, dynamic_loader=None, max_depth=12):
         self.accounts = accounts
         self.nodes = {}
-        self.addr_visited = {}
         self.edges = []
         self.current_func = ""
         self.current_func_addr = 0
@@ -246,9 +245,6 @@ class LaserEVM:
     def sym_exec(self, main_address):
 
         logging.debug("Starting LASER execution")
-
-        for account in self.accounts:
-            self.addr_visited[account] = []
 
         # Initialize the execution environment
 
@@ -1026,7 +1022,6 @@ class LaserEVM:
                         # New contract bytecode loaded successfully, create a new contract account
 
                         self.accounts[callee_address] = Account(callee_address, code, callee_address)
-                        self.addr_visited[callee_address] = []
 
                         logging.info("Dependency loaded: " + callee_address)
 
