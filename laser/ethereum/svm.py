@@ -767,12 +767,15 @@ class LaserEVM:
                 index = state.stack.pop()
                 logging.debug("Storage access at index " + str(index))
 
-                if type(index) == BitVecRef:
-                    # SLOAD from hash offset
-
-                    # k = sha3.keccak_512()
-                    # k.update(bytes(str(index), 'utf-8'))
-                    # index = k.hexdigest()[:8]
+                try:
+                    index = helper.get_concrete_int(index)
+                except AttributeError:
+                    '''
+                    SLOAD from hash offset
+                    k = sha3.keccak_512()
+                    k.update(bytes(str(index), 'utf-8'))
+                    index = k.hexdigest()[:8]
+                    '''
 
                     index = str(index)
 
@@ -789,7 +792,9 @@ class LaserEVM:
 
                 logging.debug("Write to storage[" + str(index) + "] at node " + str(start_addr))
 
-                if type(index) == BitVecRef:
+                try:
+                    index = helper.get_concrete_int(index)          
+                except AttributeError:
                     index = str(index)
 
                 try:
