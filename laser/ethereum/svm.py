@@ -234,8 +234,9 @@ class LaserEVM:
     def copy_global_state(self, gblState):
         mstate = copy.deepcopy(gblState.mstate)
         environment = copy.copy(gblState.environment)
+        accounts = copy.copy(gblState.accounts)
 
-        return GlobalState(self.accounts, environment, mstate)
+        return GlobalState(accounts, environment, mstate)
 
     def sym_exec(self, main_address):
 
