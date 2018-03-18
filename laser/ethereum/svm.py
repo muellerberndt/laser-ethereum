@@ -54,8 +54,13 @@ class Account():
     def __str__(self):
         return str(self.as_dict())
 
-    def as_dict(self):
+    def get_storage(self, index):
+        try:
+            return self.storage[index]
+        except KeyError:
+            return BitVec("storage_" + str(index), 256)
 
+    def as_dict(self):
         return {'nonce': self.nonce, 'code': self.code, 'balance': self.balance, 'storage': self.storage}
 
 
