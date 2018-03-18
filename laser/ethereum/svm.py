@@ -228,15 +228,20 @@ class LaserEVM:
         self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
         self.max_depth = max_depth
+        self.dirty_storage = False
 
         logging.info("LASER EVM initialized with dynamic loader: " + str(dynamic_loader))
 
     def copy_global_state(self, gblState):
         mstate = copy.deepcopy(gblState.mstate)
-        environment = copy.copy(gblState.environment)
-        accounts = copy.copy(gblState.accounts)
 
-        return GlobalState(accounts, environment, mstate)
+        if self.dirty_storage:
+            accounts = copy.deepcopy(gblState.accounts)
+            self.dirty_storage = False
+        else:
+            accounts = copy.copy(gblState.accounts)
+
+        return GlobalState(accounts, gblState.environment, mstate)
 
     def sym_exec(self, main_address):
 
@@ -771,13 +776,6 @@ class LaserEVM:
                 try:
                     index = helper.get_concrete_int(index)
                 except AttributeError:
-                    '''
-                    SLOAD from hash offset
-                    k = sha3.keccak_512()
-                    k.update(bytes(str(index), 'utf-8'))
-                    index = k.hexdigest()[:8]
-                    '''
-
                     index = str(index)
 
                 try:
@@ -794,12 +792,13 @@ class LaserEVM:
                 logging.debug("Write to storage[" + str(index) + "] at node " + str(start_addr))
 
                 try:
-                    index = helper.get_concrete_int(index)          
+                    index = helper.get_concrete_int(index)
                 except AttributeError:
                     index = str(index)
 
                 try:
                     gblState.environment.active_account.storage[index] = value
+                    self.dirty_storage = True
                 except KeyError:
                     logging.debug("Error writing to storage: Invalid index")
                     continue
