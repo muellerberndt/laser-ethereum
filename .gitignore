@@ -8,3 +8,5 @@ dist
 *.lock
 *.svg
 laser_ethereum.egg-info
+coverage_html_report/
+.coverage

@@ -4,10 +4,10 @@ LASER is a symbolic virtual machine (SVM) that runs Ethereum smart contracts. It
 
 ## Installing and Running the Symbolic Virtual Machine
 
-The SVM runs Mythril `Disassembly` objects instead of raw Ethereum bytecode. It is therefore best installed alongside with [Mythril](https://github.com/ConsenSys/mythril).
+The SVM runs Mythril `Disassembly` objects instead of raw Ethereum bytecode. It is therefore best installed alongside with [Mythril](https://github.com/ConsenSys/mythril). Since mythril only supports python 3, we also requires python 3 here.  
 
 ```
-$ pip install mythril
+$ pip3 install mythril
 ```
 
 The `Disassembly` object can be created from Solidity source code or Ethereum bytecode.
@@ -17,7 +17,7 @@ from laser.ethereum import svm
 from mythril.ether.soliditycontract import SolidityContract
 contract = SolidityContract("solidity_examples/underflow.sol", "Under")
 
-disassembly = contract.get_disassembly()
+disassembly = contract.disassembly
 ```
 
 It contains a list of instructions in the format `{'address': address, 'opcode': mnemonic, 'argument': argument}`.
@@ -80,7 +80,7 @@ In LASER:
 {'pc': 0, 'stack': [], 'memory': [], 'memsize': 0, 'gas': 10000000}
 ```
 
-#### Execution Enviroment (I)
+#### Execution Environment (I)
 
 ```
 - Ia, the address of the account which owns the code that is executing.
@@ -118,6 +118,23 @@ Extract(255, 224, calldata_Under_0) == 2736852615
 callvalue == 0
 
 ```
+
+## Tests and coverage report
+
+Run tests:
+
+```bash
+pip3 install -r requirements.txt
+./all_tests.sh
+```
+
+Generate coverage report:
+
+```bash
+./coverage_report.sh
+```
+
+It will generate the coverage report in `./coverage_html_report/index.html`, and which will be automatically opened in browser.
 
 ## Caveats
 
