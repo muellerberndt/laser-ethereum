@@ -980,7 +980,6 @@ class LaserEVM:
                             callee_address = "0x" + callee_address[26:]
 
                     else:
-                        logging.info("Unable to resolve address from storage.")
                         ret = BitVec("retval_" + str(instr['address']), 256)
                         state.stack.append(ret)
                         continue
