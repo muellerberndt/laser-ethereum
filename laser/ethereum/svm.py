@@ -429,12 +429,12 @@ class LaserEVM:
 
             elif op == 'EXP':
                 # we only implement 2 ** x
-                base, exponent = state.stack.pop(), state.stack.pop()
+                base, exponent = helper.pop_bitvec(state), helper.pop_bitvec(state)
 
-                if (type(base) != BitVecNumRef):
+                if (type(base) != BitVecNumRef) or (type(exponent) != BitVecNumRef):
                     state.stack.append(BitVec(str(base) + "_EXP_" + str(exponent), 256))
                 elif (base.as_long() == 2):
-                    if exponent == 0:
+                    if exponent.as_long() == 0:
                         state.stack.append(BitVecVal(1, 256))
                     else:
                         state.stack.append(base << (exponent - 1))
