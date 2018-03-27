@@ -659,7 +659,7 @@ class LaserEVM:
                 state.stack.append(BitVecVal(helper.concrete_int_from_bytes(keccac, 0), 256))
 
             elif op == 'GASPRICE':
-                state.stack.append(BitVecVal(1, 256))
+                state.stack.append(BitVec("gasprice", 256))
 
             elif op == 'CODECOPY':
                 # Not implemented
@@ -926,7 +926,7 @@ class LaserEVM:
                 state.stack.append(BitVec("msize", 256))
 
             elif op == 'GAS':
-                state.stack.append(10000000)
+                state.stack.append(BitVec("gas", 256))
 
             elif op.startswith('LOG'):
                 dpth = int(op[3:])
