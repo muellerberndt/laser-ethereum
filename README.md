@@ -121,6 +121,10 @@ callvalue == 0
 
 ## Tests and coverage report
 
+### python version
+
+First, make sure your python version is `3.6.x`. Some tests will fail with `3.5.x` since some generated easm code is different from `3.6.x`.
+
 Run tests:
 
 ```bash

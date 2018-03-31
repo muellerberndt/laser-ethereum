@@ -1,12 +1,10 @@
 from unittest import TestCase, skip
-from pathlib import Path
 import json
 from mythril.ether.soliditycontract import SolidityContract
 
 from laser.ethereum.svm import GlobalState, MachineState
 from laser.ethereum import svm
-
-TESTDATA = Path(__file__).parent / "testdata"
+from tests import *
 
 
 class LaserEncoder(json.JSONEncoder):
