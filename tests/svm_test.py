@@ -65,19 +65,21 @@ class SvmTest(TestCase):
 
     def _test_with_file(self, filename):
         input_file = (TESTDATA / "inputs" / filename)
+        output_expected = TESTDATA / "outputs_expected" / (input_file.name + ".json")
+        output_current = TESTDATA / "outputs_current" / (input_file.name + ".json")
+
         disassembly = SolidityContract(str(input_file)).disassembly
         account = svm.Account("0x0000000000000000000000000000000000000000", disassembly)
         accounts = {account.address: account}
 
         laser = svm.LaserEVM(accounts)
         laser.sym_exec(account.address)
+        laser_info = _all_info(laser)
 
-        generated_info = json.dumps(_all_info(laser), cls=LaserEncoder, indent=4)
+        output_current.write_text(json.dumps(laser_info, cls=LaserEncoder, indent=4))
 
-        # (TESTDATA / "outputs" / (input_file.name + ".json")).write_text(generated_info)
-
-        expected_info = (TESTDATA / "outputs" / (input_file.name + ".json")).read_text()
-        self.assertEqual(generated_info, expected_info, "{}: information of laser is changed".format(str(input_file)))
+        self.assertEqual(output_expected.read_text(), output_current.read_text(),
+                         "{}: information of laser is changed, you can compare follow files to see the differences:\n{}\n{}\n".format(str(input_file), str(output_expected), str(output_current)))
 
     def test_with_file_calls(self):
         self._test_with_file("calls.sol")
