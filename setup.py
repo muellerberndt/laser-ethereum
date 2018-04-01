@@ -60,7 +60,9 @@ setup(
 
     install_requires=[
         'z3-solver>=4.5',
-        'py-flags'
+        'py-flags',
+        'mythril',
+        'coverage'
     ],
 
     python_requires='>=3.5',
