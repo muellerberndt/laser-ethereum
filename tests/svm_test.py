@@ -1,4 +1,3 @@
-from unittest import TestCase, skip
 import json
 from mythril.ether.soliditycontract import SolidityContract
 
@@ -58,62 +57,28 @@ def _all_info(laser):
     }
 
 
-class SvmTest(TestCase):
+class SvmTest(BaseTestCase):
 
     def setUp(self):
+        super(SvmTest, self).setUp()
         svm.gbl_next_uid = 0
 
-    def _test_with_file(self, filename):
-        input_file = (TESTDATA / "inputs" / filename)
-        output_expected = TESTDATA / "outputs_expected" / (input_file.name + ".json")
-        output_current = TESTDATA / "outputs_current" / (input_file.name + ".json")
+    def test(self):
+        for input_file in TESTDATA_INPUTS.iterdir():
+            output_expected = TESTDATA_OUTPUTS_EXPECTED / (input_file.name + ".json")
+            output_current = TESTDATA_OUTPUTS_CURRENT / (input_file.name + ".json")
 
-        disassembly = SolidityContract(str(input_file)).disassembly
-        account = svm.Account("0x0000000000000000000000000000000000000000", disassembly)
-        accounts = {account.address: account}
+            disassembly = SolidityContract(str(input_file)).disassembly
+            account = svm.Account("0x0000000000000000000000000000000000000000", disassembly)
+            accounts = {account.address: account}
 
-        laser = svm.LaserEVM(accounts)
-        laser.sym_exec(account.address)
-        laser_info = _all_info(laser)
+            laser = svm.LaserEVM(accounts)
+            laser.sym_exec(account.address)
+            laser_info = _all_info(laser)
 
-        output_current.write_text(json.dumps(laser_info, cls=LaserEncoder, indent=4))
+            output_current.write_text(json.dumps(laser_info, cls=LaserEncoder, indent=4))
 
-        self.assertEqual(output_expected.read_text(), output_current.read_text(),
-                         "{}: information of laser is changed, you can compare follow files to see the differences:\n{}\n{}\n".format(str(input_file), str(output_expected), str(output_current)))
+            if not (output_expected.read_text() == output_expected.read_text()):
+                self.found_changed_files(input_file, output_expected, output_current)
 
-    def test_with_file_calls(self):
-        self._test_with_file("calls.sol")
-
-    def test_with_file_ether_send(self):
-        self._test_with_file("ether_send.sol")
-
-    def test_with_file_exceptions(self):
-        self._test_with_file("exceptions.sol")
-
-    def test_with_file_kinds_of_calls(self):
-        self._test_with_file("kinds_of_calls.sol")
-
-    def test_with_file_metacoin(self):
-        self._test_with_file("metacoin.sol")
-
-    def test_with_file_multi_contracts(self):
-        self._test_with_file("multi_contracts.sol")
-
-    def test_with_file_origin(self):
-        self._test_with_file("origin.sol")
-
-    def test_with_file_returnvalue(self):
-        self._test_with_file("returnvalue.sol")
-
-    def test_with_file_rubixi(self):
-        self._test_with_file("rubixi.sol")
-
-    def test_with_file_suicide(self):
-        self._test_with_file("suicide.sol")
-
-    def test_with_file_underflow(self):
-        self._test_with_file("underflow.sol")
-
-    @skip("generated information is too large (> 90M)")
-    def test_with_file_weak_random(self):
-        self._test_with_file("weak_random.sol")
+        self.assert_and_show_changed_files()
