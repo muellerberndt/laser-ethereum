@@ -421,7 +421,10 @@ class LaserEVM:
 
             elif op == 'ADDMOD':
                 s0, s1, s2 = helper.pop_bitvec(state), helper.pop_bitvec(state), helper.pop_bitvec(state)
-                state.stack.append((s0 + s1) % s2 if s2 else 0)
+
+                logging.info(str(type))
+
+                state.stack.append((s0 + s1) % s2)
 
             elif op == 'MULMOD':
                 s0, s1, s2 = helper.pop_bitvec(state), helper.pop_bitvec(state), helper.pop_bitvec(state)
