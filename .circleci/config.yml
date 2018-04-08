@@ -1,0 +1,29 @@
+version: 2
+
+jobs:
+  # Basic testing of a new commit to any branch.
+  test:
+    docker:
+      - image: birdofpreyru/mythril:0.0.1
+
+    steps:
+      - checkout:
+          path: /home/laser-ethereum
+
+      # Uncomment, for local testing with circleci command, as it ignores
+      # path param in checkout command, and this symlink compenstates for that.
+      - run: ln -s /root/project /home/laser-ethereum
+
+      - run:
+          name: Install dependencies, in case any are missing in Docker image
+          command: pip3 install -r /home/laser-ethereum/requirements.txt
+
+      - run:
+          name: Unit-testing
+          command: cd /home/laser-ethereum && ./all_tests.sh
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - test
