@@ -21,38 +21,44 @@ def to_signed(i):
 
 def get_instruction_index(instruction_list, address):
 
-	index = 0
+    index = 0
 
-	for instr in instruction_list:
-		if instr['address'] == address:
-			return index
+    for instr in instruction_list:
+        if instr['address'] == address:
+            return index
 
-		index += 1
+        index += 1
 
-	return None
+    return None
 
 
 def get_trace_line(instr, state):
 
-	stack = str(state.stack[::-1])
+    stack = str(state.stack[::-1])
 
-	# stack = re.sub("(\d+)",	lambda m: hex(int(m.group(1))), stack)
-	stack = re.sub("\n", "", stack)
+    # stack = re.sub("(\d+)",   lambda m: hex(int(m.group(1))), stack)
+    stack = re.sub("\n", "", stack)
 
-	return str(instr['address']) + " " + instr['opcode'] + "\tSTACK: " + stack
+    return str(instr['address']) + " " + instr['opcode'] + "\tSTACK: " + stack
 
 
 def pop_bitvec(state):
-    # pop one element from stack, converting boolean expression to bitvector
+    # pop one element from stack, converting boolean expressions and
+    # concrete Python variables to BitVecVal
 
     item = state.stack.pop()
 
     if type(item) == BoolRef:
         return If(item, BitVecVal(1, 256), BitVecVal(0, 256))
+    elif type(item) == bool:
+        if item:
+            return BitVecVal(1, 256)
+        else:
+            return BitVecVal(0, 256)
     elif type(item) == int:
         return BitVecVal(item, 256)
     else:
-        return item
+        return simplify(item)
 
 
 def get_concrete_int(item):
@@ -83,6 +89,4 @@ def concrete_int_to_bytes(val):
     if (type(val) == int):
         return val.to_bytes(32, byteorder='big')
 
-
     return (simplify(val).as_long()).to_bytes(32, byteorder='big')
-

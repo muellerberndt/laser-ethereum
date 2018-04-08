@@ -421,7 +421,10 @@ class LaserEVM:
 
             elif op == 'ADDMOD':
                 s0, s1, s2 = helper.pop_bitvec(state), helper.pop_bitvec(state), helper.pop_bitvec(state)
-                state.stack.append((s0 + s1) % s2 if s2 else 0)
+
+                logging.info(str(type))
+
+                state.stack.append((s0 + s1) % s2)
 
             elif op == 'MULMOD':
                 s0, s1, s2 = helper.pop_bitvec(state), helper.pop_bitvec(state), helper.pop_bitvec(state)
@@ -429,12 +432,12 @@ class LaserEVM:
 
             elif op == 'EXP':
                 # we only implement 2 ** x
-                base, exponent = state.stack.pop(), state.stack.pop()
+                base, exponent = helper.pop_bitvec(state), helper.pop_bitvec(state)
 
-                if (type(base) != BitVecNumRef):
+                if (type(base) != BitVecNumRef) or (type(exponent) != BitVecNumRef):
                     state.stack.append(BitVec(str(base) + "_EXP_" + str(exponent), 256))
                 elif (base.as_long() == 2):
-                    if exponent == 0:
+                    if exponent.as_long() == 0:
                         state.stack.append(BitVecVal(1, 256))
                     else:
                         state.stack.append(base << (exponent - 1))
@@ -659,7 +662,7 @@ class LaserEVM:
                 state.stack.append(BitVecVal(helper.concrete_int_from_bytes(keccac, 0), 256))
 
             elif op == 'GASPRICE':
-                state.stack.append(BitVecVal(1, 256))
+                state.stack.append(BitVec("gasprice", 256))
 
             elif op == 'CODECOPY':
                 # Not implemented
@@ -926,7 +929,7 @@ class LaserEVM:
                 state.stack.append(BitVec("msize", 256))
 
             elif op == 'GAS':
-                state.stack.append(10000000)
+                state.stack.append(BitVec("gas", 256))
 
             elif op.startswith('LOG'):
                 dpth = int(op[3:])
@@ -980,7 +983,6 @@ class LaserEVM:
                             callee_address = "0x" + callee_address[26:]
 
                     else:
-                        logging.info("Unable to resolve address from storage.")
                         ret = BitVec("retval_" + str(instr['address']), 256)
                         state.stack.append(ret)
                         continue

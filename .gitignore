@@ -8,3 +8,7 @@ dist
 *.lock
 *.svg
 laser_ethereum.egg-info
+coverage_html_report/
+.coverage
+tests/testdata/outputs_current/
+tests/mythril_dir/signatures.json
