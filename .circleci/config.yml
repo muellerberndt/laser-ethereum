@@ -30,8 +30,29 @@ jobs:
           name: Unit-testing
           command: cd /home/laser-ethereum && ./all_tests.sh
 
+  deploy:
+    docker:
+      - image: birdofpreyru/mythril:0.0.1
+    steps:
+      - checkout:
+          path: /home/laser-ethereum
+      - run:
+          name: Build
+          command: cd /home/laser-ethereum && python3 setup.py bdist_wheel --universal
+      - run:
+          name: Deploy
+          command: cd /home/laser-ethereum && twine upload dist/*
+
 workflows:
   version: 2
   build:
     jobs:
       - test
+      - deploy:
+          filters:
+            tags:
+              only: /v[0-9]+(\.[0-9]+)*/
+          requires:
+            - test
+
+
