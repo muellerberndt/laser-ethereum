@@ -781,6 +781,13 @@ class LaserEVM:
                     data = gblState.accounts[gblState.environment.sender].storage[index]
                 except KeyError:
                     data = BitVec("storage_" + str(index), 256)
+                    
+                    # Should create a fresh copy of account object like 'SSTORE' op
+                    for k in gblState.accounts:
+                        if gblState.accounts[k] == gblState.environment.active_account:
+                            gblState.accounts[k] = copy.deepcopy(gblState.accounts[k])
+                            gblState.environment.active_account = gblState.accounts[k]
+                            break
                     gblState.environment.active_account.storage[index] = data
 
                 state.stack.append(data)
