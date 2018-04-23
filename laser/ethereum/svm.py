@@ -1,27 +1,18 @@
-import binascii
-import logging
-import re
-import attr
+from laser.ethereum import helper
+from ethereum import utils
 from enum import Enum
-
 from flags import Flags
 from z3 import *
+import binascii
+import copy
+import logging
+import re
 
-from ethereum import utils
-from laser.ethereum import helper
 
 TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 
 gbl_next_uid = 0  # node counter
-
-
-def get_fresh_id():
-    global gbl_next_uid
-
-    new_id = gbl_next_uid
-    gbl_next_uid += 1
-    return new_id
 
 
 class CalldataType(Enum):
@@ -45,57 +36,118 @@ Classes to represent the global state, machine state and execution environment a
 '''
 
 
-@attr.s
-class Account(object):
-    address = attr.ib()
-    code = attr.ib(default=None)
-    contract_name = attr.ib(default="unknown")
-    balance = attr.ib(default=BitVec("balance", 256))
-    nonce = attr.ib(init=False, default=0)
-    storage = attr.ib(init=False, default={})
+class Account():
+
+    def __init__(self, address, code=None, contract_name="unknown", balance=BitVec("balance", 256)):
+        self.nonce = 0
+        self.code = code
+        self.balance = balance
+        self.storage = {}
+
+        '''
+        Metadata
+        '''
+
+        self.address = address
+        self.contract_name = contract_name
+
+    def __str__(self):
+        return str(self.as_dict())
+
+    def get_storage(self, index):
+        try:
+            return self.storage[index]
+        except KeyError:
+            return BitVec("storage_" + str(index), 256)
+
+    def as_dict(self):
+        return {'nonce': self.nonce, 'code': self.code, 'balance': self.balance, 'storage': self.storage}
 
 
-@attr.s
-class Environment(object):
-    active_account = attr.ib()
-    sender = attr.ib()
-    calldata = attr.ib()
-    gasprice = attr.ib()
-    callvalue = attr.ib()
-    origin = attr.ib()
-    calldata_type = attr.ib(default=CalldataType.SYMBOLIC)
+class Environment():
+
+    def __init__(
+        self,
+        active_account,
+        sender,
+        calldata,
+        gasprice,
+        callvalue,
+        origin,
+        calldata_type=CalldataType.SYMBOLIC,
+    ):
+
+        # Metadata
+
+        self.active_account = active_account
+
+        self.address = active_account.address
+        self.code = active_account.code
+
+        self.sender = sender
+        self.calldata = calldata
+        self.calldata_type = calldata_type
+        self.gasprice = gasprice
+        self.origin = origin
+        self.callvalue = callvalue
+
+    def __str__(self):
+        return str(self.as_dict())
+
+    def as_dict(self):
+
+        return {'active_account': self.active_account, 'sender': self.sender, 'calldata': self.calldata, 'gasprice': self.gasprice, 'callvalue': self.callvalue, 'origin': self.origin, 'calldata_type': self.calldata_type}
 
 
-@attr.s
-class MachineState(object):
-    pc = attr.ib(init=False, default=0)
-    stack = attr.ib(init=False, factory=list)
-    memory = attr.ib(init=False, factory=list)
-    memsize = attr.ib(init=False, default=0)
-    gas = attr.ib()
+class MachineState():
+
+    def __init__(self, gas):
+        self.pc = 0
+        self.stack = []
+        self.memory = []
+        self.memsize = 0
+        self.gas = gas
 
     def mem_extend(self, start, sz):
+
         if (start < 4096 and sz < 4096):
+
             if sz and start + sz > len(self.memory):
+
                 n_append = start + sz - len(self.memory)
+
                 while n_append > 0:
                     self.memory.append(0)
                     n_append -= 1
+
                 self.memsize = sz
+
         else:
             raise Exception
-            # TODO: Deduct gas for memory extension... not yet implemented
+
+            # Deduct gas for memory extension... not yet implemented
+
+    def __str__(self):
+        return str(self.as_dict())
+
+    def as_dict(self):
+
+        return {'pc': self.pc, 'stack': self.stack, 'memory': self.memory, 'memsize': self.memsize, 'gas': self.gas}
 
 
-@attr.s
-class GlobalState(object):
-    accounts = attr.ib()
-    environment = attr.ib()
-    mstate = attr.ib(default=MachineState(gas=10000000))
+class GlobalState():
+
+    def __init__(self, accounts, environment, machinestate=MachineState(gas=10000000)):
+        self.accounts = accounts
+        self.environment = environment
+        self.mstate = machinestate
 
     # Returns the instruction currently being executed.
+
     def get_current_instruction(self):
-        return self.environment.code.instruction_list[self.mstate.pc]
+        instructions = self.environment.code.instruction_list
+
+        return instructions[self.mstate.pc]
 
 
 '''
@@ -111,36 +163,55 @@ class NodeFlags(Flags):
     CALL_RETURN = 2
 
 
-@attr.s
-class Node(object):
-    contract_name = attr.ib()
-    start_addr = attr.ib(default=0)
-    constraints = attr.ib(factory=list)
-    states = attr.ib(init=False, factory=list)
-    function_name = attr.ib(init=False, default="unknown")
-    flags = attr.ib(init=False, default=NodeFlags())
-    uid = attr.ib(init=False, default=get_fresh_id())
+class Node:
+
+    def __init__(self, contract_name, start_addr=0, constraints=[]):
+        self.contract_name = contract_name
+        self.start_addr = start_addr
+        self.states = []
+        self.constraints = constraints
+        self.function_name = "unknown"
+        self.flags = NodeFlags()
+
+        # Self-assign a unique ID
+
+        global gbl_next_uid
+
+        self.uid = gbl_next_uid
+        gbl_next_uid += 1
 
     def get_cfg_dict(self):
+
         code = ""
+
         for state in self.states:
+
             instruction = state.get_current_instruction()
+
             code += str(instruction['address']) + " " + instruction['opcode']
             if instruction['opcode'].startswith("PUSH"):
                 code += " " + instruction['argument']
+
             code += "\\n"
 
-        return {'contract_name': self.contract_name, 'start_addr': self.start_addr, 'function_name': self.function_name,
-                'code': code}
+        return {'contract_name': self.contract_name, 'start_addr': self.start_addr, 'function_name': self.function_name, 'code': code}
 
 
-@attr.s
-class Edge(object):
-    node_from = attr.ib()
-    node_to = attr.ib()
-    edge_type = attr.ib(default=JumpType.UNCONDITIONAL)
-    condition = attr.ib(default=None)
+class Edge:
 
+    def __init__(self, node_from, node_to, edge_type=JumpType.UNCONDITIONAL, condition=None):
+
+        self.node_from = node_from
+        self.node_to = node_to
+        self.type = edge_type
+        self.condition = condition
+
+    def __str__(self):
+        return str(self.as_dict())
+
+    def as_dict(self):
+
+        return {'from': self.node_from, 'to': self.node_to}
 
 '''
 Main symbolic execution engine.
