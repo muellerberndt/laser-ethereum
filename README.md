@@ -1,4 +1,6 @@
 # LASER-ethereum
+![Master Build Status](https://img.shields.io/circleci/project/github/b-mueller/laser-ethereum/master.svg)
+![PyPI version](https://img.shields.io/pypi/v/laser-ethereum.svg)
 
 LASER is a symbolic virtual machine (SVM) that runs Ethereum smart contracts. It accurately models most features of the Ethereum virtual machine including inter-contracts calls.
 

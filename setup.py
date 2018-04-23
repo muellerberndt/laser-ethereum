@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-
+import os
 
 long_description = '''
 LASER
@@ -33,7 +33,7 @@ The easiest way to use LASER is by installing Mythril command line tool:
 setup(
     name='laser-ethereum',
 
-    version='0.5.20',
+    version=os.getenv('CIRCLE_TAG', 'v0.5.21')[1:],
 
     description='Symbolic Ethereum virtual machine',
     long_description=long_description,
