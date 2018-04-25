@@ -1,6 +1,21 @@
 from setuptools import setup, find_packages
 import os
 
+# Package version (vX.Y.Z). It must match git tag being used for CircleCI
+# deployment; otherwise the build will failed.
+VERSION = "v0.16.1"
+
+class VerifyVersionCommand(install):
+  """Custom command to verify that the git tag matches our version"""
+  description = 'verify that the git tag matches our version'
+
+  def run(self):
+      tag = os.getenv('CIRCLE_TAG')
+
+      if (tag != VERSION):
+          info = "Git tag: {0} does not match the version of this app: {1}".format(tag, VERSION)
+          sys.exit(info)
+
 long_description = '''
 LASER
 =======
@@ -33,7 +48,7 @@ The easiest way to use LASER is by installing Mythril command line tool:
 setup(
     name='laser-ethereum',
 
-    version=os.getenv('CIRCLE_TAG', 'v0.5.21')[1:],
+    version=VERSION[1:],
 
     description='Symbolic Ethereum virtual machine',
     long_description=long_description,
@@ -66,4 +81,7 @@ setup(
 
     python_requires='>=3.5',
 
+    cmdclass = {
+      'verify': VerifyVersionCommand,
+    },
 )

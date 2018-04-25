@@ -3,6 +3,16 @@ For Developers
 
 ## Tests and coverage report
 
+## Deployment to PyPI
+- Update `VERSION` constant on top of `setup.py` file to `vX.Y.Z`, where `X`,
+  `Y`, `Z` are some integers specifying the new version of the package;
+- Create Git tag with the same version name `vX.Y.Z`;
+- Push the tag to `laser-ethereum` repo, CircleCI will take care about the rest
+  (testing, and deployment to PyPI if tests are successful).
+
+In case of mismatch between Git tag and `VERSION` in `CircleCI` deployment will
+be failed.
+
 ### python version
 
 First, make sure your python version is `3.6.x`. Some tests will fail with `3.5.x` since some generated easm code is different from `3.6.x`.
