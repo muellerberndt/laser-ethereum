@@ -12,6 +12,7 @@ def test_record_tainted_check():
     # assert
     assert tainted is True
 
+
 def test_record_untainted_check():
     # arrange
     record = TaintRecord()
@@ -23,6 +24,7 @@ def test_record_untainted_check():
 
     # assert
     assert tainted is False
+
 
 def test_record_untouched_check():
     # arrange
