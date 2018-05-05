@@ -74,7 +74,7 @@ class TaintRunner:
         state_index = node.states.index(state)
 
         # List of (Node, TaintRecord, index)
-        current_nodes = [(node,init_record, state_index)]
+        current_nodes = [(node, init_record, state_index)]
 
         for node, record, index in current_nodes:
             records = TaintRunner._execute_node(node, record, index)
@@ -104,7 +104,26 @@ class TaintRunner:
     def _execute_state(record, state):
         """ Runs taint analysis on a state """
         record.add_state(state)
+        new_record = TaintRecord()
 
-        # run op and build new record and return
+        # Copy old values
+        new_record.stack_record = record.stack_record
 
-        return None
+        # Apply Change
+        op = state.get_current_instruction()['opcode']
+        if op in TaintRunner.stack_taint_table.keys():
+            mutator = TaintRunner.stack_taint_table[op]
+            TaintRunner._mutate_stack(record, mutator)
+
+        return new_record
+
+    @staticmethod
+    def _mutate_stack(record, mutator):
+        pass
+
+    stack_taint_table = {
+        # instruction: (taint source, taint target)
+        'ADD': (2, 1),
+        'MUL': (2, 1),
+        'SUB': (2, 1)
+    }
