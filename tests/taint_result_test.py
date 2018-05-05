@@ -17,6 +17,7 @@ def test_result_state():
     assert tainted is False
     assert record in taint_result.records
 
+
 def test_result_no_state():
     # arrange
     taint_result = TaintResult()
