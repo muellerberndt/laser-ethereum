@@ -39,6 +39,8 @@ class TaintResult:
         :return: tainted
         """
         record = self._try_get_record(state)
+        if record is None:
+            return None
         return record.stack_tainted(stack_index)
 
     def add_records(self, records):
