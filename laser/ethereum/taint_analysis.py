@@ -13,6 +13,7 @@ class TaintRecord:
         """ Returns if stack element with index is tainted """
         if index in self.stack_record.keys():
             return self.stack_record[index]
+        return False
 
     def taint_stack(self, index):
         self.stack_record[index] = True
