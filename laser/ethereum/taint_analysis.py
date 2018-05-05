@@ -2,8 +2,17 @@ class TaintRecord:
     """
     TaintRecord contains tainting information for a specific (state, node)
     """
-    pass
 
+    def __init__(self, node, state):
+        """ Builds a taint record for node, state combo"""
+        self.node = node
+        self.state = state
+        self.stack_record = {}
+
+    def stack_tainted(self, index):
+        """ Returns if stack element with index is tainted"""
+        if index in self.stack_record.keys():
+            return self.stack_record[index]
 
 class TaintResult:
     """ Taint analysis result obtained after having ran the taint runner"""
