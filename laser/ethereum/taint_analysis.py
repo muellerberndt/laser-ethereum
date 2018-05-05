@@ -8,6 +8,9 @@ class TaintRecord:
 class TaintResult:
     """ Taint analysis result obtained after having ran the taint runner"""
 
+    def __init__(self):
+        self.records = []
+
     def check(self, state, stack_index):
         """
         Checks if stack variable is tainted
@@ -16,6 +19,10 @@ class TaintResult:
         :return: tainted
         """
         pass
+
+    def add_records(self, records):
+        self.records += records
+
 
 class TaintRunner:
     """
@@ -32,5 +39,32 @@ class TaintRunner:
         :param stack_indexes: stack indexes to introduce taint
         :return: TaintResult object containing analysis results
         """
-        pass
+        result = TaintResult()
 
+        # List of (Node, TaintRecord, index)
+        current_nodes = []
+
+        # TODO: build first current_node
+
+        for node, record, index in current_nodes:
+            records = TaintRunner._execute_node(node, record, index)
+            result.add_records(records)
+
+            # TODO: discover children nodes
+
+        return result
+
+    @staticmethod
+    def _execute_node(node, last_record, state_index=0):
+        """
+        Runs taint analysis on a given node
+        :param node: node to analyse
+        :param last_record: last taint record to work from
+        :param state_index: state index to start from
+        :return: List of taint records linked to the states in this node
+        """
+        return []
+
+    @staticmethod
+    def _execute_state:
+        pass
