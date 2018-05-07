@@ -153,7 +153,8 @@ class TaintRunner:
             TaintRunner.mutate_log(record, op)
         elif op in ('CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL'):
             TaintRunner.mutate_call(record, op)
-
+        else:
+            logging.debug("Unknown operation encountered: {}".format(op))
 
         return new_record
 
