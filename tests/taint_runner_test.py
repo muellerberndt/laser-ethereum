@@ -71,18 +71,18 @@ def test_execute(mocker):
         4: False,
     }
 
-    state_1 = GlobalState
+    state_1 = GlobalState(None, None)
     mocker.patch.object(state_1, 'get_current_instruction')
-    state_1.get_current_instruction.return_value = {"opcode": "ADD"}
+    state_1.get_current_instruction.return_value = {"opcode": "PUSH"}
 
-    state_2 = GlobalState
+    state_2 = GlobalState(None, None)
     mocker.patch.object(state_2, 'get_current_instruction')
     state_2.get_current_instruction.return_value = {"opcode": "ADD"}
 
     node_1 = Node("Test contract")
     node_1.states = [state_1, state_2]
 
-    state_3 = GlobalState
+    state_3 = GlobalState(None, None)
     mocker.patch.object(state_3, 'get_current_instruction')
     state_3.get_current_instruction.return_value = {"opcode": "ADD"}
 
@@ -101,13 +101,6 @@ def test_execute(mocker):
 
     # Assert
     print(result)
-    assert result
-    assert result
-    # assert len(records) == 3
-    # assert records[0] == record
-    # assert list(record.stack_record.items()) == [(0, True), (1, True), (2, False), (3, False)]
-    # assert list(records[1].stack_record.items()) == [(0, True), (1, True), (2, False)]
-    # assert list(records[2].stack_record.items()) == [(0, True), (1, True)]
-    #
-    # assert state_2 in records[1].states
-    # assert state_1 in records[0].states
+    assert len(result.records) == 3
+    assert result.records[2].states == []
+    assert state_3 in result.records[1].states

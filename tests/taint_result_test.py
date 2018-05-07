@@ -8,7 +8,7 @@ def test_result_state():
     record = TaintRecord()
     state = MachineState(2)
     record.add_state(state)
-
+    record.remove_taint_stack(2)
     # act
     taint_result.add_records([record])
     tainted = taint_result.check(state, 2)

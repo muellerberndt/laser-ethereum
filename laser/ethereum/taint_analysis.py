@@ -107,7 +107,7 @@ class TaintRunner:
         for index in range(state_index, len(node.states)):
             current_state = node.states[index]
             records.append(TaintRunner.execute_state(records[-1], current_state))
-        return records
+        return records[1:]
 
     @staticmethod
     def execute_state(record, state):
@@ -156,6 +156,7 @@ class TaintRunner:
 
     stack_taint_table = {
         # instruction: (taint source, taint target)
+        'PUSH': (0, 1),
         'ADD': (2, 1),
         'MUL': (2, 1),
         'SUB': (2, 1)
