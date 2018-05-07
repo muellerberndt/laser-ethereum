@@ -127,6 +127,23 @@ class TaintRunner:
         if op in TaintRunner.stack_taint_table.keys():
             mutator = TaintRunner.stack_taint_table[op]
             TaintRunner.mutate_stack(new_record, mutator)
+        elif op.startswith("DUP"):
+            TaintRunner.mutate_dup(op, record)
+        elif op.startswith("SWAP"):
+            TaintRunner.mutate_swap(op, record)
+        elif op is "MLOAD":
+            TaintRunner.mutate_mload(record, state.stack[-1])
+        elif op.startswith("MSTORE"):
+            TaintRunner.mutate_mstore(record, state.stack[-1])
+        elif op is "SLOAD":
+            TaintRunner.mutate_sload(record, state.stack[-1])
+        elif op is "SSTORE":
+            TaintRunner.mutate_sstore(record, state.stack[-1])
+        elif op is "LOG":
+            TaintRunner.mutate_log(record, op)
+        elif op in ('CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL'):
+            TaintRunner.mutate_call(record, op)
+
 
         return new_record
 
@@ -143,8 +160,80 @@ class TaintRunner:
         for i in range(push):
             record.stack.append(taint)
 
-    #TODO: CALLDATACOPY, CODECOPY,'CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL', mstore8
+    @staticmethod
+    def mutate_dup(op, record):
+        depth = int(op[3:])
+        index = len(record.stack) - depth
+        record.append(record.stack[index])
 
+    @staticmethod
+    def mutate_swap(op, record):
+        depth = int(op[3:])
+        l = len(record.stack) - 1
+        i = l - depth
+        record.stack[l], record.stack[i] = record.stack[i], record.stack[l]
+
+    @staticmethod
+    def mutate_mload(record, op0):
+        _ = record.stack.pop()
+        try:
+            index = helper.get_concrete_int(op0)
+        except AttributeError:
+            logging.debug("Can't MLOAD taint track symbolically")
+            record.stack.append(False)
+            return
+
+        record.stack.append(record.memory_tainted(index))
+
+    @staticmethod
+    def mutate_mstore(record, op0):
+        _, value_taint = record.stack.pop(), record.stack.pop()
+        try:
+            index = helper.get_concrete_int(op0)
+        except AttributeError:
+            logging.debug("Can't mstore taint track symbolically")
+            return
+
+        record.memory[index] = value_taint
+
+    @staticmethod
+    def mutate_sload(record, op0):
+        _ = record.stack.pop()
+        try:
+            index = helper.get_concrete_int(op0)
+        except AttributeError:
+            logging.debug("Can't MLOAD taint track symbolically")
+            record.stack.append(False)
+            return
+
+        record.stack.append(record.storage_tainted(index))
+
+    @staticmethod
+    def mutate_sstore(record, op0):
+        _, value_taint = record.stack.pop(), record.stack.pop()
+        try:
+            index = helper.get_concrete_int(op0)
+        except AttributeError:
+            logging.debug("Can't mstore taint track symbolically")
+            return
+
+        record.storage[index] = value_taint
+
+    @staticmethod
+    def mutate_log(record, op):
+        depth = int(op[3:])
+        for _ in range(depth + 2):
+            record.stack.pop()
+
+    @staticmethod
+    def mutate_call(record, op):
+        pops = 6
+        if op in ('CALL', 'CALLCODE'):
+            pops += 1
+        for _ in range(pops):
+            record.stack.pop()
+
+        record.stack.append(False)
 
     stack_taint_table = {
         # instruction: (taint source, taint target)
@@ -193,73 +282,7 @@ class TaintRunner:
         'PC': (0, 1),
         'MSIZE': (0, 1),
         'GAS': (0, 1),
-        'CREATE': (3, 1)
+        'CREATE': (3, 1),
         'RETURN': (2, 0)
     }
 
-    def mutate_dup(self, op, record):
-        depth = int(op[3:])
-        index = len(record.stack) - depth
-        record.append(record.stack[index])
-
-    def mutate_swap(self, op, record):
-        depth = int(op[3:])
-        l = len(record.stack) - 1
-        i = l - depth
-        record.stack[l], record.stack[i] = record.stack[i], record.stack[l]
-
-    def mutate_mload(self, record, op0):
-        _ = record.stack.pop()
-        try:
-            index = helper.get_concrete_int(op0)
-        except AttributeError:
-            logging.debug("Can't MLOAD taint track symbolically")
-            record.stack.append(False)
-            return
-
-        record.stack.append(record.memory_tainted(index))
-
-    def mutate_mstore(self, record, op0):
-        _, value_taint = record.stack.pop(), self.stack.pop()
-        try:
-            index = helper.get_concrete_int(op0)
-        except AttributeError:
-            logging.debug("Can't mstore taint track symbolically")
-            return
-
-        record.memory[index] = value_taint
-
-    def mutate_sload(self, record, op0):
-        _ = record.stack.pop()
-        try:
-            index = helper.get_concrete_int(op0)
-        except AttributeError:
-            logging.debug("Can't MLOAD taint track symbolically")
-            record.stack.append(False)
-            return
-
-        record.stack.append(record.storage_tainted(index))
-
-    def mutate_sstore(self, record, op0):
-        _, value_taint = record.stack.pop(), self.stack.pop()
-        try:
-            index = helper.get_concrete_int(op0)
-        except AttributeError:
-            logging.debug("Can't mstore taint track symbolically")
-            return
-
-        record.storage[index] = value_taint
-
-    def mutate_log(self, record, op):
-        depth = int(op[3:])
-        for _ in range(depth + 2):
-            record.stack.pop()
-
-    def mutate_call(self, record, op):
-        pops = 6
-        if op in ('CALL', 'CALLCODE'):
-            pops += 1
-        for _ in range(pops):
-            record.stack.pop()
-
-        record.stack.append(False)
