@@ -77,7 +77,7 @@ class TaintRunner:
         result = TaintResult()
 
         # Build initial current_node
-        init_record = TaintRecord(node, state)
+        init_record = TaintRecord()
         for index in stack_indexes:
             init_record.taint_stack(index)
         state_index = node.states.index(state)
@@ -89,7 +89,7 @@ class TaintRunner:
             records = TaintRunner.execute_node(node, record, index)
             result.add_records(records)
 
-            children = [statespace.nodes[edge.node_to] for edge in statespace.edges]
+            children = [statespace.nodes[edge.node_to] for edge in statespace.edges if edge.node_from == node.uid]
             for child in children:
                 current_nodes.append((child, records[-1], 0))
         return result
