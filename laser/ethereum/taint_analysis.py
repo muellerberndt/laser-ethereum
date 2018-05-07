@@ -154,7 +154,9 @@ class TaintRunner:
             else:
                 record.remove_taint_stack(new_len_stack - i)
 
-    #TODO: dup, swap, CALLDATACOPY, CODECOPY, MLOAD, MSTORE, SLOAD, SSTORE 'CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL', log
+    #TODO: CALLDATACOPY, CODECOPY, MLOAD, MSTORE, SLOAD, SSTORE 'CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL', log
+
+
     stack_taint_table = {
         # instruction: (taint source, taint target)
         'PUSH': (0, 1),
@@ -205,3 +207,19 @@ class TaintRunner:
         'CREATE': (3, 1)
 
     }
+
+    def mutate_stack_dup(self, op, record):
+        depth = int(op[3:])
+        s_len = len(record.stack_record.keys())
+        index = s_len - depth
+        tainted = record.stack_tainted(index)
+        if tainted:
+            record.taint_stack(index)
+        else:
+            record.remove_taint_stack(index)
+
+    def mutate_stack_swap(self, op, record):
+        depth = int(op[3:])
+        s_len = len(record.stack_record.keys())
+        index = s_len - depth - 1
+        record.stack_record[index], record.stack_record[s_len - 1] = record.stack_record[s_len - 1], record.stack_record[index]
