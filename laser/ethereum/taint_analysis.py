@@ -15,7 +15,7 @@ class TaintRecord:
         """ Returns if stack element with index is tainted """
         if index in self.stack_record.keys():
             return self.stack_record[index]
-        return False
+        return None
 
     def taint_stack(self, index):
         self.stack_record[index] = True
@@ -142,7 +142,7 @@ class TaintRunner:
 
         # Determine if new values are tainted
         new_tainted = False
-        for i in range(new_len_stack, len_stack):
+        for i in range(len_stack - pop, len_stack):
             new_tainted = new_tainted or record.stack_tainted(i)
         record.stack_record = new_stack_record
 

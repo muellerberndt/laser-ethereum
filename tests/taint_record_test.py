@@ -35,5 +35,5 @@ def test_record_untouched_check():
     tainted = record.stack_tainted(3)
 
     # assert
-    assert tainted is False
+    assert tainted is None
 
