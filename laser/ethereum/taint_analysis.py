@@ -185,16 +185,11 @@ class TaintRunner:
 
     def mutate_stack_dup(self, op, record):
         depth = int(op[3:])
-        s_len = len(record.stack_record.keys())
-        index = s_len - depth
-        tainted = record.stack_tainted(index)
-        if tainted:
-            record.taint_stack(index)
-        else:
-            record.remove_taint_stack(index)
+        index = len(record.stack) - depth
+        record.append(record.stack[index])
 
     def mutate_stack_swap(self, op, record):
         depth = int(op[3:])
-        s_len = len(record.stack_record.keys())
-        index = s_len - depth - 1
-        record.stack_record[index], record.stack_record[s_len - 1] = record.stack_record[s_len - 1], record.stack_record[index]
+        l = len(record.stack) - 1
+        i = l - depth
+        record.stack[l], record.stack[i] = record.stack[i], record.stack[l]
