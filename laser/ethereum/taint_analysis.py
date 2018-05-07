@@ -1,6 +1,7 @@
 import logging, copy
 import laser.ethereum.helper as helper
 
+
 class TaintRecord:
     """
     TaintRecord contains tainting information for a specific (state, node)
@@ -15,27 +16,33 @@ class TaintRecord:
         self.states = []
 
     def stack_tainted(self, index):
-        """ Returns if stack element with index is tainted """
+        """ Returns taint value of stack element at index"""
         if index < len(self.stack):
             return self.stack[index]
         return None
 
     def memory_tainted(self, index):
+        """ Returns taint value of memory element at index"""
         if index in self.memory.keys():
             return self.memory[index]
         return False
 
     def storage_tainted(self, index):
+        """ Returns taint value of storage element at index"""
         if index in self.storage.keys():
             return self.storage[index]
         return False
 
     def add_state(self, state):
+        """ Adds state with this taint record """
         self.states.append(state)
 
     def clone(self):
+        """ Clones this record"""
         clone = TaintRecord()
         clone.stack = copy.deepcopy(self.stack)
+        clone.memory = copy.deepcopy(self.memory)
+        clone.storage = copy.deepcopy(self.storage)
         return clone
 
 class TaintResult:
