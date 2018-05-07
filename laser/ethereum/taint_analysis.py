@@ -116,13 +116,36 @@ class TaintRunner:
         op = state.get_current_instruction()['opcode']
         if op in TaintRunner.stack_taint_table.keys():
             mutator = TaintRunner.stack_taint_table[op]
-            TaintRunner._mutate_stack(record, mutator)
+            TaintRunner.mutate_stack(record, mutator)
 
         return new_record
 
     @staticmethod
-    def _mutate_stack(record, mutator):
-        pass
+    def mutate_stack(record, mutator):
+        pop, push = mutator
+        new_stack_record = {}
+
+        # Clone old record values
+        _stack_indexes = list(record.stack_record.keys())
+        len_stack = len(_stack_indexes)
+        _stack_indexes = _stack_indexes[: len_stack - pop]
+        new_len_stack = len(_stack_indexes)
+        for i in _stack_indexes:
+            new_stack_record[i] = record.stack_record[i]
+
+        # Determine if new values are tainted
+        new_tainted = False
+        for i in range(new_len_stack, len_stack):
+            new_tainted = new_tainted or record.stack_tainted(i)
+        record.stack_record = new_stack_record
+
+        # Write taint to record
+        for number in range(push):
+            i = number
+            if new_tainted:
+                record.taint_stack(new_len_stack - i)
+            else:
+                record.remove_taint_stack(new_len_stack - i)
 
     stack_taint_table = {
         # instruction: (taint source, taint target)
