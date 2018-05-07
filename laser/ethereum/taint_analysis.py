@@ -194,6 +194,7 @@ class TaintRunner:
         'MSIZE': (0, 1),
         'GAS': (0, 1),
         'CREATE': (3, 1)
+        'RETURN': (2, 0)
     }
 
     def mutate_dup(self, op, record):
@@ -253,3 +254,12 @@ class TaintRunner:
         depth = int(op[3:])
         for _ in range(depth + 2):
             record.stack.pop()
+
+    def mutate_call(self, record, op):
+        pops = 6
+        if op in ('CALL', 'CALLCODE'):
+            pops += 1
+        for _ in range(pops):
+            record.stack.pop()
+
+        record.stack.append(False)
