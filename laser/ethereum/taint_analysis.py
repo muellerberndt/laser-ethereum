@@ -86,7 +86,7 @@ class TaintRunner:
         current_nodes = [(node, init_record, state_index)]
 
         for node, record, index in current_nodes:
-            records = TaintRunner._execute_node(node, record, index)
+            records = TaintRunner.execute_node(node, record, index)
             result.add_records(records)
 
             children = [statespace.nodes[edge.node_to] for edge in statespace.edges]
@@ -95,7 +95,7 @@ class TaintRunner:
         return result
 
     @staticmethod
-    def _execute_node(node, last_record, state_index=0):
+    def execute_node(node, last_record, state_index=0):
         """
         Runs taint analysis on a given node
         :param node: node to analyse
