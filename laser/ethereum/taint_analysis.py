@@ -1,3 +1,5 @@
+import logging
+
 class TaintRecord:
     """
     TaintRecord contains tainting information for a specific (state, node)
@@ -127,6 +129,10 @@ class TaintRunner:
 
         # Clone old record values
         _stack_indexes = list(record.stack_record.keys())
+        if len(_stack_indexes) < pop:
+            logging.error("Taint analysis error not that many elements on the stack.")
+            return
+
         len_stack = len(_stack_indexes)
         _stack_indexes = _stack_indexes[: len_stack - pop]
         new_len_stack = len(_stack_indexes)
