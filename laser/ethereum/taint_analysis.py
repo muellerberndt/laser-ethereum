@@ -143,7 +143,7 @@ class TaintRunner:
         for i in range(push):
             record.stack.append(taint)
 
-    #TODO: CALLDATACOPY, CODECOPY, MLOAD, MSTORE, SLOAD, SSTORE 'CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL', log, mstore8
+    #TODO: CALLDATACOPY, CODECOPY,'CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL', mstore8
 
 
     stack_taint_table = {
@@ -248,3 +248,8 @@ class TaintRunner:
             return
 
         record.storage[index] = value_taint
+
+    def mutate_log(self, record, op):
+        depth = int(op[3:])
+        for _ in range(depth + 2):
+            record.stack.pop()
