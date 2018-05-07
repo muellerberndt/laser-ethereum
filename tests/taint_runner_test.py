@@ -7,11 +7,7 @@ from laser.ethereum.svm import GlobalState, Node, Edge, LaserEVM
 
 def test_execute_state(mocker):
     record = TaintRecord()
-    record.stack_record = {
-        0: True,
-        1: False,
-        2: True
-    }
+    record.stack = [True, False, True]
 
     state = GlobalState
     mocker.patch.object(state, 'get_current_instruction')
@@ -21,18 +17,13 @@ def test_execute_state(mocker):
     new_record = TaintRunner.execute_state(record, state)
 
     # Assert
-    assert list(new_record.stack_record.items()) == [(0, True), (1, True)]
-    assert list(record.stack_record.items()) == [(0, True), (1, False), (2, True)]
+    assert new_record.stack == [True, True]
+    assert record.stack == [True, False, True]
 
 
 def test_execute_node(mocker):
     record = TaintRecord()
-    record.stack_record = {
-        0: True,
-        1: True,
-        2: False,
-        3: False,
-    }
+    record.stack = [True, True, False, False]
 
     state_1 = GlobalState
     mocker.patch.object(state_1, 'get_current_instruction')
@@ -49,28 +40,18 @@ def test_execute_node(mocker):
     records = TaintRunner.execute_node(node, record)
 
     # Assert
-    assert len(records) == 3
-    assert records[0] == record
-    assert list(record.stack_record.items()) == [(0, True), (1, True), (2, False), (3, False)]
-    assert list(records[1].stack_record.items()) == [(0, True), (1, True), (2, False)]
-    assert list(records[2].stack_record.items()) == [(0, True), (1, True)]
+    assert len(records) == 2
 
-    assert state_2 in records[1].states
-    assert state_1 in records[0].states
+    assert records[0].stack == [True, True, False]
+    assert records[1].stack == [True, True]
+
+    assert state_2 in records[0].states
+    assert state_1 in record.states
 
 
 
 
 def test_execute(mocker):
-    record = TaintRecord()
-    record.stack_record = {
-        0: True,
-        1: True,
-        2: False,
-        3: False,
-        4: False,
-    }
-
     state_1 = GlobalState(None, None)
     mocker.patch.object(state_1, 'get_current_instruction')
     state_1.get_current_instruction.return_value = {"opcode": "PUSH"}
@@ -97,7 +78,7 @@ def test_execute(mocker):
     statespace.nodes[node_2.uid] = node_2
 
     # Act
-    result = TaintRunner.execute(statespace, node_1, state_1, [0, 1])
+    result = TaintRunner.execute(statespace, node_1, state_1, [True, True])
 
     # Assert
     print(result)

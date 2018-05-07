@@ -8,27 +8,21 @@ class TaintRecord:
 
     def __init__(self):
         """ Builds a taint record """
-        self.stack_record = {}
+        self.stack = []
         self.states = []
 
     def stack_tainted(self, index):
         """ Returns if stack element with index is tainted """
-        if index in self.stack_record.keys():
-            return self.stack_record[index]
+        if index < len(self.stack):
+            return self.stack[index]
         return None
-
-    def taint_stack(self, index):
-        self.stack_record[index] = True
-
-    def remove_taint_stack(self, index):
-        self.stack_record[index] = False
 
     def add_state(self, state):
         self.states.append(state)
 
     def clone(self):
         clone = TaintRecord()
-        clone.stack_record = copy.deepcopy(self.stack_record)
+        clone.stack = copy.deepcopy(self.stack)
         return clone
 
 class TaintResult:
@@ -65,7 +59,7 @@ class TaintRunner:
     """
 
     @staticmethod
-    def execute(statespace, node, state, stack_indexes=[]):
+    def execute(statespace, node, state, initial_stack=[]):
         """
         Runs taint analysis on the statespace
         :param statespace: symbolic statespace to run taint analysis on
@@ -78,8 +72,8 @@ class TaintRunner:
 
         # Build initial current_node
         init_record = TaintRecord()
-        for index in stack_indexes:
-            init_record.taint_stack(index)
+        init_record.stack = initial_stack
+
         state_index = node.states.index(state)
 
         # List of (Node, TaintRecord, index)
@@ -126,33 +120,15 @@ class TaintRunner:
     @staticmethod
     def mutate_stack(record, mutator):
         pop, push = mutator
-        new_stack_record = {}
 
-        # Clone old record values
-        _stack_indexes = list(record.stack_record.keys())
-        if len(_stack_indexes) < pop:
-            logging.error("Taint analysis error not that many elements on the stack.")
-            return
+        values = []
+        for i in range(pop):
+            values.append(record.stack.pop())
 
-        len_stack = len(_stack_indexes)
-        _stack_indexes = _stack_indexes[: len_stack - pop]
-        new_len_stack = len(_stack_indexes)
-        for i in _stack_indexes:
-            new_stack_record[i] = record.stack_record[i]
+        taint = any(values)
 
-        # Determine if new values are tainted
-        new_tainted = False
-        for i in range(len_stack - pop, len_stack):
-            new_tainted = new_tainted or record.stack_tainted(i)
-        record.stack_record = new_stack_record
-
-        # Write taint to record
-        for number in range(push):
-            i = number
-            if new_tainted:
-                record.taint_stack(new_len_stack - i)
-            else:
-                record.remove_taint_stack(new_len_stack - i)
+        for i in range(push):
+            record.stack.append(taint)
 
     #TODO: CALLDATACOPY, CODECOPY, MLOAD, MSTORE, SLOAD, SSTORE 'CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL', log
 
@@ -205,7 +181,6 @@ class TaintRunner:
         'MSIZE': (0, 1),
         'GAS': (0, 1),
         'CREATE': (3, 1)
-
     }
 
     def mutate_stack_dup(self, op, record):
