@@ -2,3 +2,5 @@ z3-solver>=4.5
 py-flags
 coverage
 pytest
+mock
+pytest_mock
