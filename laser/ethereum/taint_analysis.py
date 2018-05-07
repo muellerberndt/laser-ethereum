@@ -1,4 +1,4 @@
-import logging
+import logging, copy
 
 class TaintRecord:
     """
@@ -26,6 +26,10 @@ class TaintRecord:
     def add_state(self, state):
         self.states.append(state)
 
+    def clone(self):
+        clone = TaintRecord()
+        clone.stack_record = copy.deepcopy(self.stack_record)
+        return clone
 
 class TaintResult:
     """ Taint analysis result obtained after having ran the taint runner"""
@@ -102,11 +106,11 @@ class TaintRunner:
         records = [last_record]
         for index in range(state_index, len(node.states)):
             current_state = node.states[index]
-            records.append(TaintRunner._execute_state(records[-1], current_state))
+            records.append(TaintRunner.execute_state(records[-1].clone(), current_state))
         return []
 
     @staticmethod
-    def _execute_state(record, state):
+    def execute_state(record, state):
         """ Runs taint analysis on a state """
         record.add_state(state)
         new_record = TaintRecord()
