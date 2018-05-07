@@ -1,4 +1,5 @@
 import logging, copy
+import laser.ethereum.helper as helper
 
 class TaintRecord:
     """
@@ -9,6 +10,8 @@ class TaintRecord:
     def __init__(self):
         """ Builds a taint record """
         self.stack = []
+        self.memory = {}
+        self.storage = {}
         self.states = []
 
     def stack_tainted(self, index):
@@ -16,6 +19,16 @@ class TaintRecord:
         if index < len(self.stack):
             return self.stack[index]
         return None
+
+    def memory_tainted(self, index):
+        if index in self.memory.keys():
+            return self.memory[index]
+        return False
+
+    def storage_tainted(self, index):
+        if index in self.storage.keys():
+            return self.storage[index]
+        return False
 
     def add_state(self, state):
         self.states.append(state)
@@ -130,7 +143,7 @@ class TaintRunner:
         for i in range(push):
             record.stack.append(taint)
 
-    #TODO: CALLDATACOPY, CODECOPY, MLOAD, MSTORE, SLOAD, SSTORE 'CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL', log
+    #TODO: CALLDATACOPY, CODECOPY, MLOAD, MSTORE, SLOAD, SSTORE 'CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL', log, mstore8
 
 
     stack_taint_table = {
@@ -183,13 +196,55 @@ class TaintRunner:
         'CREATE': (3, 1)
     }
 
-    def mutate_stack_dup(self, op, record):
+    def mutate_dup(self, op, record):
         depth = int(op[3:])
         index = len(record.stack) - depth
         record.append(record.stack[index])
 
-    def mutate_stack_swap(self, op, record):
+    def mutate_swap(self, op, record):
         depth = int(op[3:])
         l = len(record.stack) - 1
         i = l - depth
         record.stack[l], record.stack[i] = record.stack[i], record.stack[l]
+
+    def mutate_mload(self, record, op0):
+        _ = record.stack.pop()
+        try:
+            index = helper.get_concrete_int(op0)
+        except AttributeError:
+            logging.debug("Can't MLOAD taint track symbolically")
+            record.stack.append(False)
+            return
+
+        record.stack.append(record.memory_tainted(index))
+
+    def mutate_mstore(self, record, op0):
+        _, value_taint = record.stack.pop(), self.stack.pop()
+        try:
+            index = helper.get_concrete_int(op0)
+        except AttributeError:
+            logging.debug("Can't mstore taint track symbolically")
+            return
+
+        record.memory[index] = value_taint
+
+    def mutate_sload(self, record, op0):
+        _ = record.stack.pop()
+        try:
+            index = helper.get_concrete_int(op0)
+        except AttributeError:
+            logging.debug("Can't MLOAD taint track symbolically")
+            record.stack.append(False)
+            return
+
+        record.stack.append(record.storage_tainted(index))
+
+    def mutate_sstore(self, record, op0):
+        _, value_taint = record.stack.pop(), self.stack.pop()
+        try:
+            index = helper.get_concrete_int(op0)
+        except AttributeError:
+            logging.debug("Can't mstore taint track symbolically")
+            return
+
+        record.storage[index] = value_taint
