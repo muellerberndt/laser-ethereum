@@ -154,10 +154,54 @@ class TaintRunner:
             else:
                 record.remove_taint_stack(new_len_stack - i)
 
+    #TODO: dup, swap, CALLDATACOPY, CODECOPY, MLOAD, MSTORE, SLOAD, SSTORE 'CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL', log
     stack_taint_table = {
         # instruction: (taint source, taint target)
         'PUSH': (0, 1),
+        'POP': (1, 0),
         'ADD': (2, 1),
         'MUL': (2, 1),
-        'SUB': (2, 1)
+        'SUB': (2, 1),
+        'AND': (2, 1),
+        'OR':  (2, 1),
+        'NOT': (2, 1),
+        'BYTE': (2, 1),
+        'DIV': (2, 1),
+        'MOD': (2, 1),
+        'SDIV': (2, 1),
+        'SMOD': (2, 1),
+        'ADDMOD': (2, 1),
+        'MULMOD': (2, 1),
+        'EXP': (2, 1),
+        'SIGNEXTEND': (2, 1),
+        'LT': (2, 1),
+        'GT': (2, 1),
+        'SLT': (2, 1),
+        'SGT': (2, 1),
+        'EQ': (2, 1),
+        'ISZERO': (1, 1),
+        'CALLVALUE': (0, 1),
+        'CALLDATALOAD': (1, 1),
+        'CALLDATASIZE': (0, 1),
+        'ADDRESS': (0, 1),
+        'BALANCE': (1, 1),
+        'ORIGIN': (0, 1),
+        'CALLER': (0, 1),
+        'CODESIZE': (0, 1),
+        'SHA3': (2, 1),
+        'GASPRICE': (0, 1),
+        'EXTCODESIZE': (1, 1),
+        'BLOCKHASH': (1, 1),
+        'COINBASE': (0, 1),
+        'TIMESTAMP': (0, 1),
+        'NUMBER': (0, 1),
+        'DIFFICULTY': (0, 1),
+        'GASLIMIT': (0, 1),
+        'JUMP': (1, 0),
+        'JUMPI': (2, 0),
+        'PC': (0, 1),
+        'MSIZE': (0, 1),
+        'GAS': (0, 1),
+        'CREATE': (3, 1)
+
     }
