@@ -45,6 +45,7 @@ class TaintRecord:
         clone.storage = copy.deepcopy(self.storage)
         return clone
 
+
 class TaintResult:
     """ Taint analysis result obtained after having ran the taint runner"""
 
@@ -64,9 +65,11 @@ class TaintResult:
         return record.stack_tainted(stack_index)
 
     def add_records(self, records):
+        """ Adds records to this taint result """
         self.records += records
 
     def _try_get_record(self, state):
+        """ Finds record belonging to the state """
         for record in self.records:
             if state in record.states:
                 return record
