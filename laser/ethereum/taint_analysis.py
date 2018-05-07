@@ -106,23 +106,20 @@ class TaintRunner:
         records = [last_record]
         for index in range(state_index, len(node.states)):
             current_state = node.states[index]
-            records.append(TaintRunner.execute_state(records[-1].clone(), current_state))
-        return []
+            records.append(TaintRunner.execute_state(records[-1], current_state))
+        return records
 
     @staticmethod
     def execute_state(record, state):
         """ Runs taint analysis on a state """
         record.add_state(state)
-        new_record = TaintRecord()
-
-        # Copy old values
-        new_record.stack_record = record.stack_record
+        new_record = record.clone()
 
         # Apply Change
         op = state.get_current_instruction()['opcode']
         if op in TaintRunner.stack_taint_table.keys():
             mutator = TaintRunner.stack_taint_table[op]
-            TaintRunner.mutate_stack(record, mutator)
+            TaintRunner.mutate_stack(new_record, mutator)
 
         return new_record
 
