@@ -19,10 +19,6 @@ jobs:
           command: cd /home/laser-ethereum && python3 setup.py install
 
       - run:
-          name: Installing mythril tools
-          command: cd /home && ./install-mythril-tools.sh mythril
-
-      - run:
           name: Install dependencies, in case any are missing in Docker image
           command: pip3 install -r /home/laser-ethereum/requirements.txt
 
