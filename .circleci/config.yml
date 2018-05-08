@@ -37,6 +37,9 @@ jobs:
       - checkout:
           path: /home/laser-ethereum
       - run:
+          name: Verify Git tag vs. version
+          command: cd /home/laser-ethereum && python3 setup.py verify
+      - run:
           name: Build
           command: cd /home/laser-ethereum && python3 setup.py bdist_wheel --universal
       - run:
