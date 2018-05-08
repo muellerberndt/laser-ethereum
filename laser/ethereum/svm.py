@@ -81,7 +81,7 @@ class Environment():
 
         self.active_account = active_account
 
-        self.address = active_account.address
+        self.address = BitVecVal(int(active_account.address, 16), 256)
         self.code = active_account.code
 
         self.sender = sender
@@ -615,7 +615,7 @@ class LaserEVM:
             # Environment
 
             elif op == 'ADDRESS':
-                state.stack.append(environment.sender)
+                state.stack.append(environment.address)
 
             elif op == 'BALANCE':
                 addr = state.stack.pop()
@@ -778,7 +778,7 @@ class LaserEVM:
                     index = str(index)
 
                 try:
-                    data = gblState.accounts[gblState.environment.sender].storage[index]
+                    data = gblState.environment.active_account.storage[index]
                 except KeyError:
                     data = BitVec("storage_" + str(index), 256)
                     gblState.environment.active_account.storage[index] = data
