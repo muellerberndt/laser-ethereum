@@ -128,6 +128,7 @@ class TaintRunner:
 
     @staticmethod
     def execute_state(record, state):
+        assert len(state.mstate.stack) == len(record.stack)
         """ Runs taint analysis on a state """
         record.add_state(state)
         new_record = record.clone()
@@ -137,22 +138,24 @@ class TaintRunner:
         if op in TaintRunner.stack_taint_table.keys():
             mutator = TaintRunner.stack_taint_table[op]
             TaintRunner.mutate_stack(new_record, mutator)
+        elif op.startswith("PUSH"):
+            TaintRunner.mutate_push(op, new_record)
         elif op.startswith("DUP"):
-            TaintRunner.mutate_dup(op, record)
+            TaintRunner.mutate_dup(op, new_record)
         elif op.startswith("SWAP"):
-            TaintRunner.mutate_swap(op, record)
+            TaintRunner.mutate_swap(op, new_record)
         elif op is "MLOAD":
-            TaintRunner.mutate_mload(record, state.stack[-1])
+            TaintRunner.mutate_mload(new_record, state.mstate.stack[-1])
         elif op.startswith("MSTORE"):
-            TaintRunner.mutate_mstore(record, state.stack[-1])
+            TaintRunner.mutate_mstore(new_record, state.mstate.stack[-1])
         elif op is "SLOAD":
-            TaintRunner.mutate_sload(record, state.stack[-1])
+            TaintRunner.mutate_sload(new_record, state.mstate.stack[-1])
         elif op is "SSTORE":
-            TaintRunner.mutate_sstore(record, state.stack[-1])
+            TaintRunner.mutate_sstore(new_record, state.mstate.stack[-1])
         elif op is "LOG":
-            TaintRunner.mutate_log(record, op)
+            TaintRunner.mutate_log(new_record, op)
         elif op in ('CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL'):
-            TaintRunner.mutate_call(record, op)
+            TaintRunner.mutate_call(new_record, op)
         else:
             logging.debug("Unknown operation encountered: {}".format(op))
 
@@ -172,14 +175,18 @@ class TaintRunner:
             record.stack.append(taint)
 
     @staticmethod
+    def mutate_push(op, record):
+        TaintRunner.mutate_stack(record, (0, 1))
+
+    @staticmethod
     def mutate_dup(op, record):
         depth = int(op[3:])
         index = len(record.stack) - depth
-        record.append(record.stack[index])
+        record.stack.append(record.stack[index])
 
     @staticmethod
     def mutate_swap(op, record):
-        depth = int(op[3:])
+        depth = int(op[4:])
         l = len(record.stack) - 1
         i = l - depth
         record.stack[l], record.stack[i] = record.stack[i], record.stack[l]
@@ -248,7 +255,6 @@ class TaintRunner:
 
     stack_taint_table = {
         # instruction: (taint source, taint target)
-        'PUSH': (0, 1),
         'POP': (1, 0),
         'ADD': (2, 1),
         'MUL': (2, 1),
