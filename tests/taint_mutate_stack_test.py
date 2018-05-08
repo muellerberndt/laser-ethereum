@@ -18,10 +18,10 @@ def test_mutate_tainted():
     # Arrange
     record = TaintRecord()
 
-    record.stack_record = [True, False, True]
+    record.stack = [True, False, True]
 
     # Act
-    TaintRunner.mutate_stack(record, (2,1))
+    TaintRunner.mutate_stack(record, (2, 1))
 
     # Assert
     assert record.stack_tainted(0)
