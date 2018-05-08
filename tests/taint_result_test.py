@@ -1,12 +1,13 @@
 from laser.ethereum.taint_analysis import *
-from laser.ethereum.svm import MachineState
+from laser.ethereum.svm import GlobalState
 
 
 def test_result_state():
     # arrange
     taint_result = TaintResult()
     record = TaintRecord()
-    state = MachineState(2)
+    state = GlobalState(2, None)
+    state.mstate.stack = [1,2,3]
     record.add_state(state)
     record.stack = [False, False, False]
     # act
@@ -22,7 +23,9 @@ def test_result_no_state():
     # arrange
     taint_result = TaintResult()
     record = TaintRecord()
-    state = MachineState(2)
+    state = GlobalState(2, None)
+    state.mstate.stack = [1,2,3]
+
 
     # act
     taint_result.add_records([record])
