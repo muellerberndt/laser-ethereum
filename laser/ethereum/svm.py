@@ -708,6 +708,7 @@ class LaserEVM:
                 except AttributeError:
                     logging.debug("Can't MLOAD from symbolic index")
                     data = BitVec("mem_" + str(op0), 256)
+                    state.stack.append(data)
                     continue
 
                 try:

@@ -2,14 +2,15 @@ import mock
 import pytest
 from pytest_mock import mocker
 from laser.ethereum.taint_analysis import *
-from laser.ethereum.svm import GlobalState, Node, Edge, LaserEVM
+from laser.ethereum.svm import GlobalState, Node, Edge, LaserEVM, MachineState
 
 
 def test_execute_state(mocker):
     record = TaintRecord()
     record.stack = [True, False, True]
 
-    state = GlobalState
+    state = GlobalState(None, None)
+    state.mstate.stack = [1, 2, 3]
     mocker.patch.object(state, 'get_current_instruction')
     state.get_current_instruction.return_value = {"opcode": "ADD"}
 
@@ -25,11 +26,14 @@ def test_execute_node(mocker):
     record = TaintRecord()
     record.stack = [True, True, False, False]
 
-    state_1 = GlobalState
+    state_1 = GlobalState(None, None)
+    state_1.mstate.stack = [1, 2, 3]
+    state_1.mstate.pc = 1
     mocker.patch.object(state_1, 'get_current_instruction')
-    state_1.get_current_instruction.return_value = {"opcode": "ADD"}
+    state_1.get_current_instruction.return_value = {"opcode": "SWAP1"}
 
-    state_2 = GlobalState
+    state_2 = GlobalState(None, 1)
+    state_2.mstate.stack = [1, 2, 4, 1]
     mocker.patch.object(state_2, 'get_current_instruction')
     state_2.get_current_instruction.return_value = {"opcode": "ADD"}
 
@@ -42,8 +46,8 @@ def test_execute_node(mocker):
     # Assert
     assert len(records) == 2
 
-    assert records[0].stack == [True, True, False]
-    assert records[1].stack == [True, True]
+    assert records[0].stack == [True, True, False, False]
+    assert records[1].stack == [True, True, False]
 
     assert state_2 in records[0].states
     assert state_1 in record.states
@@ -52,18 +56,21 @@ def test_execute_node(mocker):
 
 
 def test_execute(mocker):
-    state_1 = GlobalState(None, None)
+    state_1 = GlobalState(None, None, MachineState(gas=10000000))
+    state_1.mstate.stack = [1, 2]
     mocker.patch.object(state_1, 'get_current_instruction')
     state_1.get_current_instruction.return_value = {"opcode": "PUSH"}
 
-    state_2 = GlobalState(None, None)
+    state_2 = GlobalState(None, None, MachineState(gas=10000000))
+    state_2.mstate.stack = [1, 2, 3]
     mocker.patch.object(state_2, 'get_current_instruction')
     state_2.get_current_instruction.return_value = {"opcode": "ADD"}
 
     node_1 = Node("Test contract")
     node_1.states = [state_1, state_2]
 
-    state_3 = GlobalState(None, None)
+    state_3 = GlobalState(None, None, MachineState(gas=10000000))
+    state_3.mstate.stack = [1, 2]
     mocker.patch.object(state_3, 'get_current_instruction')
     state_3.get_current_instruction.return_value = {"opcode": "ADD"}
 
