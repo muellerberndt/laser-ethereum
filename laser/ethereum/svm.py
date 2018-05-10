@@ -913,7 +913,7 @@ class LaserEVM:
                             new_constraints = copy.deepcopy(constraints)
                             new_constraints.append(negated)
 
-                            new_node = self._sym_exec(new_gblState, depth=depth, constraints=new_constraints)
+                            new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=new_constraints)
                             self.nodes[new_node.uid] = new_node
                             self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, negated))
 
