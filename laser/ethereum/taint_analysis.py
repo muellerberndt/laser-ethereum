@@ -152,12 +152,12 @@ class TaintRunner:
             TaintRunner.mutate_sload(new_record, state.mstate.stack[-1])
         elif op is "SSTORE":
             TaintRunner.mutate_sstore(new_record, state.mstate.stack[-1])
-        elif op is "LOG":
+        elif op.startswith("LOG"):
             TaintRunner.mutate_log(new_record, op)
         elif op in ('CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL'):
             TaintRunner.mutate_call(new_record, op)
         else:
-            logging.debug("Unknown operation encountered: {}".format(op))
+            logging.error("Unknown operation encountered: {}".format(op))
 
         return new_record
 
