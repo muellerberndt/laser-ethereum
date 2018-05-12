@@ -990,6 +990,7 @@ class LaserEVM:
                         ret = BitVec("retval_" + str(instr['address']), 256)
                         state.stack.append(ret)
                         # Set output memory
+                        state.mem_extend(memoutstart, 1)
                         state.memory[memoutstart] = ret
                         continue
 
