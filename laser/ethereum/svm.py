@@ -678,6 +678,9 @@ class LaserEVM:
                 addr = state.stack.pop()
                 start, s2, size = state.stack.pop(), state.stack.pop(), state.stack.pop()
 
+            elif op == 'RETURNDATASIZE':
+                state.stack.append(BitVec("returndatasize", 256))
+
             elif op == 'BLOCKHASH':
                 blocknumber = state.stack.pop()
                 state.stack.append(BitVec("blockhash_block_" + str(blocknumber), 256))
@@ -986,6 +989,8 @@ class LaserEVM:
                     else:
                         ret = BitVec("retval_" + str(instr['address']), 256)
                         state.stack.append(ret)
+                        # Set output memory
+                        state.memory[memoutstart] = ret
                         continue
 
                 if not re.match(r"^0x[0-9a-f]{40}", callee_address):
