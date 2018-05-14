@@ -157,7 +157,7 @@ class TaintRunner:
         elif op in ('CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL'):
             TaintRunner.mutate_call(new_record, op)
         else:
-            logging.error("Unknown operation encountered: {}".format(op))
+            logging.debug("Unknown operation encountered: {}".format(op))
 
         return new_record
 
