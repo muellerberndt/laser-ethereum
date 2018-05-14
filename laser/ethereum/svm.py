@@ -261,8 +261,6 @@ class LaserEVM:
         )
 
         gblState = GlobalState(self.accounts, environment)
-        gblState.mstate.constraints = []
-        gblState.mstate.depth = 0
 
         node = self._sym_exec(gblState)
         self.nodes[node.uid] = node
@@ -1095,7 +1093,7 @@ class LaserEVM:
                     callee_environment = Environment(callee_account, BitVecVal(int(environment.active_account.address, 16), 256), calldata, environment.gasprice, value, environment.origin, calldata_type=calldata_type)
                     new_gblState = GlobalState(gblState.accounts, callee_environment, MachineState(gas))
                     new_gblState.mstate.depth = new_gblState.mstate.depth + 1
-                    new_gblState.mstate.constraints = state.constraints
+                    new_gblState.mstate.constraints = copy.deepcopy(state.constraints)
 
                     new_node = self._sym_exec(new_gblState)
 
@@ -1113,7 +1111,7 @@ class LaserEVM:
 
                     new_gblState = GlobalState(gblState.accounts, environment, MachineState(gas))
                     new_gblState.mstate.depth = new_gblState.mstate.depth + 1
-                    new_gblState.mstate.constraints = state.constraints
+                    new_gblState.mstate.constraints = copy.deepcopy(state.constraints)
 
                     new_node = self._sym_exec(new_gblState)
                     self.nodes[new_node.uid] = new_node
@@ -1131,7 +1129,7 @@ class LaserEVM:
 
                     new_gblState = GlobalState(gblState.accounts, environment, MachineState(gas))
                     new_gblState.mstate.depth = new_gblState.mstate.depth + 1
-                    new_gblState.mstate.constraints = state.constraints
+                    new_gblState.mstate.constraints = copy.deepcopy(state.constraints)
 
                     new_node = self._sym_exec(new_gblState)
                     self.nodes[new_node.uid] = new_node
