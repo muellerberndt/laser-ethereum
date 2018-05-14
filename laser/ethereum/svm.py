@@ -280,7 +280,7 @@ class LaserEVM:
             self.current_func = "fallback"
             self.current_func_addr = start_addr
 
-        node = Node(environment.active_account.contract_name, start_addr, state.constraints)
+        node = Node(environment.active_account.contract_name, start_addr, copy.deepcopy(state.constraints))
 
         logging.debug("- Entering node " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(state.depth))
 
