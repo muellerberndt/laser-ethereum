@@ -229,7 +229,6 @@ class LaserEVM:
         self.call_stack = []
         self.pending_returns = {}
         self.total_states = 0
-        self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
         self.max_depth = max_depth
 
