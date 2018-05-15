@@ -107,6 +107,8 @@ class MachineState():
         self.memory = []
         self.memsize = 0
         self.gas = gas
+        self.constraints = []
+        self.depth = 0
 
     def mem_extend(self, start, sz):
 
@@ -266,12 +268,11 @@ class LaserEVM:
         logging.info("%d nodes, %d edges, %d total states", len(self.nodes), len(self.edges), self.total_states)
 
 
-    def _sym_exec(self, gblState, depth=0, constraints=[]):
+    def _sym_exec(self, gblState):
 
         environment = gblState.environment
         disassembly = environment.code
         state = gblState.mstate
-        depth = depth
 
         start_addr = disassembly.instruction_list[state.pc]['address']
 
@@ -279,9 +280,9 @@ class LaserEVM:
             self.current_func = "fallback"
             self.current_func_addr = start_addr
 
-        node = Node(environment.active_account.contract_name, start_addr, constraints)
+        node = Node(environment.active_account.contract_name, start_addr, copy.deepcopy(state.constraints))
 
-        logging.debug("- Entering node " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(depth))
+        logging.debug("- Entering node " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(state.depth))
 
         if start_addr in disassembly.addr_to_func:
             # Enter a new function
@@ -833,7 +834,7 @@ class LaserEVM:
                     halt = True
                     continue
 
-                if (depth < self.max_depth):
+                if (state.depth < self.max_depth):
 
                     i = helper.get_instruction_index(disassembly.instruction_list, jump_addr)
 
@@ -848,8 +849,9 @@ class LaserEVM:
 
                         new_gblState = self.copy_global_state(gblState)
                         new_gblState.mstate.pc = i
+                        new_gblState.mstate.depth += 1
 
-                        new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
+                        new_node = self._sym_exec(new_gblState)
                         self.nodes[new_node.uid] = new_node
 
                         self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
@@ -873,7 +875,7 @@ class LaserEVM:
                 except:
                     logging.debug("Skipping JUMPI to invalid destination.")
 
-                if (depth < self.max_depth):
+                if (state.depth < self.max_depth):
 
                     i = helper.get_instruction_index(disassembly.instruction_list, jump_addr)
 
@@ -896,11 +898,10 @@ class LaserEVM:
 
                                 new_gblState = self.copy_global_state(gblState)
                                 new_gblState.mstate.pc = i
+                                new_gblState.mstate.constraints.append(condition)
+                                new_gblState.mstate.depth += 1
 
-                                new_constraints = copy.deepcopy(constraints)
-                                new_constraints.append(condition)
-
-                                new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=new_constraints)
+                                new_node = self._sym_exec(new_gblState)
                                 self.nodes[new_node.uid] = new_node
                                 self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, condition))
 
@@ -921,10 +922,9 @@ class LaserEVM:
 
                         if not is_false(simplify(negated)):
 
-                            new_constraints = copy.deepcopy(constraints)
-                            new_constraints.append(negated)
+                            new_gblState.mstate.constraints.append(negated)
 
-                            new_node = self._sym_exec(new_gblState, depth=depth, constraints=new_constraints)
+                            new_node = self._sym_exec(new_gblState)
                             self.nodes[new_node.uid] = new_node
                             self.edges.append(Edge(node.uid, new_node.uid, JumpType.CONDITIONAL, negated))
 
@@ -1092,8 +1092,10 @@ class LaserEVM:
 
                     callee_environment = Environment(callee_account, BitVecVal(int(environment.active_account.address, 16), 256), calldata, environment.gasprice, value, environment.origin, calldata_type=calldata_type)
                     new_gblState = GlobalState(gblState.accounts, callee_environment, MachineState(gas))
+                    new_gblState.mstate.depth = state.depth + 1
+                    new_gblState.mstate.constraints = copy.deepcopy(state.constraints)
 
-                    new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
+                    new_node = self._sym_exec(new_gblState)
 
                     self.nodes[new_node.uid] = new_node
 
@@ -1108,8 +1110,10 @@ class LaserEVM:
                     environment.calldata = calldata
 
                     new_gblState = GlobalState(gblState.accounts, environment, MachineState(gas))
+                    new_gblState.mstate.depth = state.depth + 1
+                    new_gblState.mstate.constraints = copy.deepcopy(state.constraints)
 
-                    new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
+                    new_node = self._sym_exec(new_gblState)
                     self.nodes[new_node.uid] = new_node
 
                     environment.callvalue = temp_callvalue
@@ -1124,8 +1128,10 @@ class LaserEVM:
                     environment.calldata = calldata
 
                     new_gblState = GlobalState(gblState.accounts, environment, MachineState(gas))
+                    new_gblState.mstate.depth = state.depth + 1
+                    new_gblState.mstate.constraints = copy.deepcopy(state.constraints)
 
-                    new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
+                    new_node = self._sym_exec(new_gblState)
                     self.nodes[new_node.uid] = new_node
 
                     environment.code = temp_code
@@ -1145,7 +1151,9 @@ class LaserEVM:
                 return_address = self.call_stack.pop()
 
                 new_gblState = self.copy_global_state(gblState)
+                new_gblState.mstate.depth += 1
                 new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
+                
                 new_node.flags |= NodeFlags.CALL_RETURN
 
                 self.nodes[new_node.uid] = new_node
