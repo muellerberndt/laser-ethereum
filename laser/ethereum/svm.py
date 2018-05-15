@@ -849,7 +849,7 @@ class LaserEVM:
 
                         new_gblState = self.copy_global_state(gblState)
                         new_gblState.mstate.pc = i
-                        new_gblState.mstate.depth = new_gblState.mstate.depth + 1
+                        new_gblState.mstate.depth += 1
 
                         new_node = self._sym_exec(new_gblState)
                         self.nodes[new_node.uid] = new_node
@@ -899,7 +899,7 @@ class LaserEVM:
                                 new_gblState = self.copy_global_state(gblState)
                                 new_gblState.mstate.pc = i
                                 new_gblState.mstate.constraints.append(condition)
-                                new_gblState.mstate.depth = new_gblState.mstate.depth + 1
+                                new_gblState.mstate.depth += 1
 
                                 new_node = self._sym_exec(new_gblState)
                                 self.nodes[new_node.uid] = new_node
@@ -1151,7 +1151,7 @@ class LaserEVM:
                 return_address = self.call_stack.pop()
 
                 new_gblState = self.copy_global_state(gblState)
-                new_gblState.mstate.depth = new_gblState.mstate.depth + 1
+                new_gblState.mstate.depth += 1
                 new_node = self._sym_exec(new_gblState)
                 new_node.flags |= NodeFlags.CALL_RETURN
 
