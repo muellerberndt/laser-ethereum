@@ -992,8 +992,12 @@ class LaserEVM:
                         ret = BitVec("retval_" + str(instr['address']), 256)
                         state.stack.append(ret)
                         # Set output memory
-                        state.mem_extend(memoutstart, 1)
-                        state.memory[memoutstart] = ret
+                        logging.debug("memoutstart: "+ str(memoutstart))
+                        if not isinstance(memoutstart, ExprRef):
+                            state.mem_extend(memoutstart, 1)
+                            state.memory[memoutstart] = ret
+                        else:
+                            logging.warning("Unsupported memory symbolic index")
                         continue
 
                 if not re.match(r"^0x[0-9a-f]{40}", callee_address):
