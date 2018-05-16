@@ -226,18 +226,16 @@ class LaserEVM:
         self.accounts = accounts
         self.nodes = {}
         self.edges = []
-        self.current_func = ""
-        self.current_func_addr = 0
         self.call_stack = []
         self.pending_returns = {}
         self.total_states = 0
-        self.active_node_prefix = ""
         self.dynamic_loader = dynamic_loader
         self.max_depth = max_depth
 
         logging.info("LASER EVM initialized with dynamic loader: " + str(dynamic_loader))
 
-    def copy_global_state(self, gblState):
+    @staticmethod
+    def copy_global_state(gblState):
         mstate = copy.deepcopy(gblState.mstate)
         environment = copy.copy(gblState.environment)
         accounts = copy.copy(gblState.accounts)
@@ -267,7 +265,6 @@ class LaserEVM:
         logging.info("Execution complete")
         logging.info("%d nodes, %d edges, %d total states", len(self.nodes), len(self.edges), self.total_states)
 
-
     def _sym_exec(self, gblState):
 
         environment = gblState.environment
@@ -276,24 +273,21 @@ class LaserEVM:
 
         start_addr = disassembly.instruction_list[state.pc]['address']
 
-        if start_addr == 0:
-            self.current_func = "fallback"
-            self.current_func_addr = start_addr
-
         node = Node(environment.active_account.contract_name, start_addr, copy.deepcopy(state.constraints))
+
+        node.function_name = ""
+        if start_addr == 0:
+            node.function_name = "fallback"
 
         logging.debug("- Entering node " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(state.depth))
 
         if start_addr in disassembly.addr_to_func:
             # Enter a new function
 
-            function_name = disassembly.addr_to_func[start_addr]
-            self.current_func = function_name
+            node.function_name = disassembly.addr_to_func[start_addr]
             node.flags |= NodeFlags.FUNC_ENTRY
 
-            logging.info("- Entering function " + environment.active_account.contract_name + ":" + function_name)
-
-        node.function_name = self.current_func
+            logging.info("- Entering function " + environment.active_account.contract_name + ":" + node.function_name)
 
         halt = False
 
@@ -308,7 +302,7 @@ class LaserEVM:
             # Save state before modifying anything
 
             node.states.append(gblState)
-            gblState = self.copy_global_state(gblState)
+            gblState = LaserEVM.copy_global_state(gblState)
 
             state = gblState.mstate
 
@@ -847,7 +841,7 @@ class LaserEVM:
 
                     if opcode == "JUMPDEST":
 
-                        new_gblState = self.copy_global_state(gblState)
+                        new_gblState = LaserEVM.copy_global_state(gblState)
                         new_gblState.mstate.pc = i
                         new_gblState.mstate.depth += 1
 
@@ -896,7 +890,7 @@ class LaserEVM:
 
                                 # Create new node for condition == True
 
-                                new_gblState = self.copy_global_state(gblState)
+                                new_gblState = LaserEVM.copy_global_state(gblState)
                                 new_gblState.mstate.pc = i
                                 new_gblState.mstate.constraints.append(condition)
                                 new_gblState.mstate.depth += 1
@@ -913,7 +907,7 @@ class LaserEVM:
                             halt = True
                             continue
 
-                        new_gblState = self.copy_global_state(gblState)
+                        new_gblState = LaserEVM.copy_global_state(gblState)
 
                         if (type(condition) == BoolRef):
                             negated = Not(condition)
@@ -1150,9 +1144,9 @@ class LaserEVM:
 
                 return_address = self.call_stack.pop()
 
-                new_gblState = self.copy_global_state(gblState)
+                new_gblState = LaserEVM.copy_global_state(gblState)
                 new_gblState.mstate.depth += 1
-                new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
+                new_node = self._sym_exec(new_gblState)
                 
                 new_node.flags |= NodeFlags.CALL_RETURN
 
