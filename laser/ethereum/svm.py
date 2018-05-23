@@ -164,6 +164,7 @@ def _copy(x, ctx):
 class GlobalState():
 
     def __init__(self, accounts, environment, machinestate=MachineState(gas=10000000), context=main_ctx()):
+        self.lock = RLock()
         self.accounts = accounts
         self.environment = environment
         self.mstate = machinestate
@@ -193,6 +194,7 @@ class NodeFlags(Flags):
 class Node:
 
     def __init__(self, contract_name, start_addr=0, constraints=[]):
+        self.lock = RLock()
         self.contract_name = contract_name
         self.start_addr = start_addr
         self.states = []
@@ -896,7 +898,10 @@ class LaserEVM:
                         new_gblState = self.copy_global_state(gblState)
                         new_gblState.mstate.pc = i
 
-                        new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=constraints)
+                        n_ctx = Context()
+                        new_constraints = list(map(lambda x: _copy(x, n_ctx), constraints))
+                        new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=new_constraints)
+
                         self.nodes[new_node.uid] = new_node
 
                         self.edges.append(Edge(node.uid, new_node.uid, JumpType.UNCONDITIONAL))
@@ -943,9 +948,9 @@ class LaserEVM:
 
                                 new_gblState = self.copy_global_state(gblState)
                                 new_gblState.mstate.pc = i
-
-                                new_constraints = copy.deepcopy(constraints)
-                                new_constraints.append(condition)
+                                n_ctx = Context()
+                                new_constraints = list(map(lambda x: _copy(x, n_ctx), constraints))
+                                new_constraints.append(_copy(condition, n_ctx))
 
                                 new_node = self._sym_exec(new_gblState, depth=depth + 1, constraints=new_constraints)
                                 self.nodes[new_node.uid] = new_node
@@ -968,8 +973,9 @@ class LaserEVM:
                             negated = condition == 0
 
                         if not is_false(simplify(negated)):
-                            new_constraints = copy.deepcopy(constraints)
-                            new_constraints.append(negated)
+                            n_ctx = Context()
+                            new_constraints = list(map(lambda x: _copy(x, n_ctx), constraints))
+                            new_constraints.append(_copy(negated, n_ctx))
 
                             new_node = self._sym_exec(new_gblState, depth=depth, constraints=new_constraints)
                             self.nodes[new_node.uid] = new_node
