@@ -80,6 +80,7 @@ class Environment():
         # Metadata
 
         self.active_account = active_account
+        self.active_function_name = ""
 
         self.address = BitVecVal(int(active_account.address, 16), 256)
         self.code = active_account.code
@@ -226,6 +227,7 @@ class LaserEVM:
         self.accounts = accounts
         self.nodes = {}
         self.edges = []
+        self.current_func = ""
         self.call_stack = []
         self.pending_returns = {}
         self.total_states = 0
@@ -275,19 +277,20 @@ class LaserEVM:
 
         node = Node(environment.active_account.contract_name, start_addr, copy.deepcopy(state.constraints))
 
-        node.function_name = ""
         if start_addr == 0:
-            node.function_name = "fallback"
+            environment.active_function_name = "fallback"
 
         logging.debug("- Entering node " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(state.depth))
 
         if start_addr in disassembly.addr_to_func:
             # Enter a new function
 
-            node.function_name = disassembly.addr_to_func[start_addr]
+            environment.active_function_name = disassembly.addr_to_func[start_addr]
             node.flags |= NodeFlags.FUNC_ENTRY
 
             logging.info("- Entering function " + environment.active_account.contract_name + ":" + node.function_name)
+
+        node.function_name = environment.active_function_name
 
         halt = False
 
