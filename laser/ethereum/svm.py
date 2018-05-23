@@ -15,9 +15,6 @@ TT256M1 = 2 ** 256 - 1
 
 gbl_next_uid = 0  # node counter
 
-z3_global_lock = RLock()
-
-
 class CalldataType(Enum):
     CONCRETE = 1
     SYMBOLIC = 2
