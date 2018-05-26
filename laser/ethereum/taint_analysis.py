@@ -292,6 +292,7 @@ class TaintRunner:
         'CODECOPY': (3, 0),
         'EXTCODESIZE': (1, 1),
         'EXTCODECOPY': (4, 0),
+        'RETURNDATASIZE': (0, 1),
         'BLOCKHASH': (1, 1),
         'COINBASE': (0, 1),
         'TIMESTAMP': (0, 1),
