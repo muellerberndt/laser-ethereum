@@ -35,9 +35,7 @@ class SVMError(Exception):
 Classes to represent the global state, machine state and execution environment as described in the Ethereum yellow paper.
 '''
 
-
 class Account():
-
     def __init__(self, address, code=None, contract_name="unknown", balance=BitVec("balance", 256)):
         self.nonce = 0
         self.code = code
@@ -136,15 +134,11 @@ class MachineState():
         return {'pc': self.pc, 'stack': self.stack, 'memory': self.memory, 'memsize': self.memsize, 'gas': self.gas}
 
     def copy(self, context=main_ctx()):
-        z3_global_lock.acquire()
-
-        try:
-            new = MachineState(self.gas, context)
-            new.pc = self.pc
-            new.stack = list(map(lambda x: _copy(x, context), self.stack))
-            new.memory = list(map(lambda x: _copy(x, context), self.memory))
-        finally:
-            z3_global_lock.release()
+        """ Copies self, translating all z3 objects to context"""
+        new = MachineState(self.gas, context)
+        new.pc = self.pc
+        new.stack = list(map(lambda x: _copy(x, context), self.stack))
+        new.memory = list(map(lambda x: _copy(x, context), self.memory))
 
         return new
 
@@ -339,11 +333,6 @@ class LaserEVM:
 
             node.states.append(gblState)
             gblState = self.copy_global_state(gblState)
-
-            assert gblState.context == gblState.mstate.context
-            for i in gblState.mstate.stack:
-                if isinstance(i, AstRef):
-                    assert i.ctx == gblState.context
 
             ctx = gblState.context
             state = gblState.mstate
