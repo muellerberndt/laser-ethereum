@@ -300,7 +300,6 @@ class LaserEVM:
         environment = gblState.environment
         disassembly = environment.code
         state = gblState.mstate
-        depth = depth
 
         start_addr = disassembly.instruction_list[state.pc]['address']
 
@@ -888,8 +887,8 @@ class LaserEVM:
                         new_gblState.mstate.depth += 1
 
                         n_ctx = Context()
-                        new_constraints = list(map(lambda x: _copy(x, n_ctx), constraints))
-			new_gblState.mstate.constraints = new_constraints 
+                        new_constraints = list(map(lambda x: _copy(x, n_ctx), state.constraints))
+                        new_gblState.mstate.constraints = new_constraints
 
                         new_node = self._sym_exec(new_gblState)
 
@@ -943,9 +942,9 @@ class LaserEVM:
                                 new_gblState.mstate.depth += 1
 
                                 n_ctx = Context()
-                                new_constraints = list(map(lambda x: _copy(x, n_ctx), constraints))
+                                new_constraints = list(map(lambda x: _copy(x, n_ctx), state.constraints))
                                 new_constraints.append(_copy(condition, n_ctx))
-			        new_gblState.mstate.constraints = new_constraints 
+                                new_gblState.mstate.constraints = new_constraints
 
                                 new_node = self._sym_exec(new_gblState)
                                 self.nodes[new_node.uid] = new_node
@@ -969,7 +968,7 @@ class LaserEVM:
 
                         if not is_false(simplify(negated)):
                             n_ctx = Context()
-                            new_constraints = list(map(lambda x: _copy(x, n_ctx), constraints))
+                            new_constraints = list(map(lambda x: _copy(x, n_ctx), state.constraints))
                             new_constraints.append(_copy(negated, n_ctx))
 
                             new_gblState.mstate.constraints = new_constraints
