@@ -143,6 +143,9 @@ class MachineState():
         """ Copies self, translating all z3 objects to context"""
         new = MachineState(self.gas, context)
         new.pc = self.pc
+        new.depth = self.depth
+        new.memsize = self.memsize
+        new.constraints = list(map(lambda x: _copy(x, context), self.constraints))
         new.stack = list(map(lambda x: _copy(x, context), self.stack))
         new.memory = list(map(lambda x: _copy(x, context), self.memory))
 
