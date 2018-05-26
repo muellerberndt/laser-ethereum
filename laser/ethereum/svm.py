@@ -825,7 +825,7 @@ class LaserEVM:
                     index = str(index)
 
                 try:
-                    data = gblState.environment.active_account.storage[index]
+                    data = copy.deepcopy(gblState.environment.active_account.storage[index]).translate(ctx)
                 except KeyError:
                     data = BitVec("storage_" + str(index), 256, ctx)
                     gblState.environment.active_account.storage[index] = data
