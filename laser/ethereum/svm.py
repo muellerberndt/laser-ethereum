@@ -552,7 +552,7 @@ class LaserEVM:
             # Call data
 
             elif op == 'CALLVALUE':
-                state.stack.append(environment.callvalue)
+                state.stack.append(_copy(environment.callvalue, ctx))
 
             elif op == 'CALLDATALOAD':
                 # unpack 32 bytes from calldata into a word and put it on the stack
@@ -661,17 +661,17 @@ class LaserEVM:
             # Environment
 
             elif op == 'ADDRESS':
-                state.stack.append(environment.address)
+                state.stack.append(_copy(environment.address, ctx))
 
             elif op == 'BALANCE':
                 addr = state.stack.pop()
                 state.stack.append(BitVec("balance_at_" + str(addr), 256, ctx))
 
             elif op == 'ORIGIN':
-                state.stack.append(environment.origin)
+                state.stack.append(_copy(environment.origin, ctx))
 
             elif op == 'CALLER':
-                state.stack.append(environment.sender)
+                state.stack.append(_copy(environment.sender, ctx))
 
             elif op == 'CODESIZE':
                 state.stack.append(len(disassembly.instruction_list))
