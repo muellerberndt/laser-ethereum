@@ -10,7 +10,6 @@ import copy
 import logging
 import re
 
-
 TT256 = 2 ** 256
 TT256M1 = 2 ** 256 - 1
 
@@ -78,7 +77,6 @@ class Environment():
         origin,
         calldata_type=CalldataType.SYMBOLIC,
     ):
-
         # Metadata
 
         self.active_account = active_account
@@ -308,7 +306,8 @@ class LaserEVM:
         if start_addr == 0:
             environment.active_function_name = "fallback"
 
-        logging.debug("- Entering node " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(start_addr) + ", depth = " + str(state.depth))
+        logging.debug("- Entering node " + str(node.uid) + ", index = " + str(state.pc) + ", address = " + str(
+            start_addr) + ", depth = " + str(state.depth))
 
         if start_addr in disassembly.addr_to_func:
             # Enter a new function
@@ -424,7 +423,7 @@ class LaserEVM:
                     result = Concat(BitVecVal(0, 248, ctx), Extract(oft + 7, oft, s1))
                 except AttributeError:
                     logging.debug("BYTE: Unsupported symbolic byte offset")
-                    result = BitVec(str(simplify(s1)) + "_" + str(simplify(s0)), 256)
+                    result = BitVec(str(simplify(s1)) + "_" + str(simplify(s0)), 256, ctx)
 
                 state.stack.append(simplify(result))
 
@@ -470,10 +469,10 @@ class LaserEVM:
                 base, exponent = helper.pop_bitvec(state), helper.pop_bitvec(state)
 
                 if (type(base) != BitVecNumRef) or (type(exponent) != BitVecNumRef):
-                    state.stack.append(BitVec(str(base) + "_EXP_" + str(exponent), 256))
+                    state.stack.append(BitVec(str(base) + "_EXP_" + str(exponent), 256, ctx))
                 elif (base.as_long() == 2):
                     if exponent.as_long() == 0:
-                        state.stack.append(BitVecVal(1, 256))
+                        state.stack.append(BitVecVal(1, 256, ctx))
                     else:
                         state.stack.append(base << (exponent - 1))
 
@@ -1033,7 +1032,7 @@ class LaserEVM:
                             callee_address = self.dynamic_loader.read_storage(environment.active_account.address, idx)
                         except:
                             logging.debug("Error accessing contract storage.")
-                            ret = BitVec("retval_" + str(instr['address']), 256)
+                            ret = BitVec("retval_" + str(instr['address']), 256, ctx)
                             state.stack.append(ret)
                             continue
 
@@ -1046,7 +1045,7 @@ class LaserEVM:
                         ret = BitVec("retval_" + str(instr['address']), 256, ctx)
                         state.stack.append(ret)
                         # Set output memory
-                        logging.debug("memoutstart: "+ str(memoutstart))
+                        logging.debug("memoutstart: " + str(memoutstart))
                         if not isinstance(memoutstart, ExprRef):
                             state.mem_extend(memoutstart, 1)
                             state.memory[memoutstart] = ret
@@ -1208,7 +1207,7 @@ class LaserEVM:
                 new_gblState = LaserEVM.copy_global_state(gblState)
                 new_gblState.mstate.depth += 1
                 new_node = self._sym_exec(new_gblState)
-                
+
                 new_node.flags |= NodeFlags.CALL_RETURN
 
                 self.nodes[new_node.uid] = new_node
