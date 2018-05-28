@@ -77,7 +77,8 @@ setup(
     install_requires=[
         'z3-solver>=4.5',
         'py-flags',
-        'coverage'
+        'coverage',
+        'attrs'
     ],
 
     python_requires='>=3.5',
