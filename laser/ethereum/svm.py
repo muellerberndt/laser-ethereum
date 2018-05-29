@@ -1053,7 +1053,7 @@ class LaserEVM:
                             state.mem_extend(memoutstart, 1)
                             state.memory[memoutstart] = ret
                         else:
-                            logging.warning("Unsupported memory symbolic index")
+                            logging.debug("Unsupported memory symbolic index")
                         continue
 
                 if not re.match(r"^0x[0-9a-f]{40}", callee_address):
