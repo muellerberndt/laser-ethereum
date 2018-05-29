@@ -47,17 +47,16 @@ def pop_bitvec(state):
     # concrete Python variables to BitVecVal
 
     item = state.stack.pop()
-    ctx = state.context
 
     if type(item) == BoolRef:
-        return If(item, BitVecVal(1, 256, ctx), BitVecVal(0, 256, ctx))
+        return If(item, BitVecVal(1, 256), BitVecVal(0, 256))
     elif type(item) == bool:
         if item:
-            return BitVecVal(1, 256, ctx)
+            return BitVecVal(1, 256)
         else:
-            return BitVecVal(0, 256, ctx)
+            return BitVecVal(0, 256)
     elif type(item) == int:
-        return BitVecVal(item, 256, ctx)
+        return BitVecVal(item, 256)
     else:
         return simplify(item)
 
